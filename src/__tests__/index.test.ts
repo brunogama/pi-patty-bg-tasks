@@ -73,8 +73,8 @@ function makePi() {
 
 const uiCtx = {
     cwd: process.cwd(),
-    ui: {
     hasUI: true,
+    ui: {
         notify() {},
         setWidget() {},
         setStatus() {},
