@@ -224,31 +224,29 @@ async function attachAction(
             markTerminal(job, "failed");
         }
 
-        onUpdate?.({
-            content: [
-                textBlock(`Following ${label} live output — waiting for it to finish…`),
-            ],
-            details: undefined,
-        });
+        if (!signal?.aborted) {
+            onUpdate?.({
+                content: [textBlock(`Following ${label} live output — waiting for it to finish…`)],
+                details: undefined,
+            });
 
-        // Stream the live log tail while we wait, so "attach" shows progress
-        // instead of sitting silent.
-        const poller = streamLog(job.logPath, onUpdate);
-        poller.ref();
-        let onAbort: (() => void) | undefined;
-        try {
-            if (signal && !signal.aborted) {
-                const abortPromise = new Promise<void>((resolve) => {
-                    onAbort = resolve;
-                    signal.addEventListener("abort", onAbort, { once: true });
-                });
-                await Promise.race([job.donePromise, abortPromise]);
-            } else {
-                await job.donePromise;
+            const poller = streamLog(job.logPath, onUpdate);
+            poller.ref();
+            let onAbort: (() => void) | undefined;
+            try {
+                if (signal) {
+                    const abortPromise = new Promise<void>((resolve) => {
+                        onAbort = resolve;
+                        signal.addEventListener("abort", onAbort, { once: true });
+                    });
+                    await Promise.race([job.donePromise, abortPromise]);
+                } else {
+                    await job.donePromise;
+                }
+            } finally {
+                poller.stop();
+                if (signal && onAbort) signal.removeEventListener("abort", onAbort);
             }
-        } finally {
-            poller.stop();
-            if (signal && onAbort) signal.removeEventListener("abort", onAbort);
         }
 
         if (job.status === "running") {

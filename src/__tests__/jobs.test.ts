@@ -123,6 +123,42 @@ void describe("jobs output — read-marks-notified", () => {
     });
 });
 
+
+void describe("jobs attach cancellation", () => {
+    void it("detaches immediately when its signal was already aborted", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-preabort` });
+        const controller = new AbortController();
+        controller.abort();
+        const completesLater = setTimeout(() => { job.resolveDone?.(); job.status = "completed"; }, 150);
+        try {
+            const result = await tool.execute(
+                "preaborted-attach", { action: "attach", jobId: job.id }, controller.signal, undefined, ctx
+            );
+            assert.match(result.content[0].text, /Stopped following/);
+            assert.equal(job.status, "running", "cancellation does not wait for completion");
+            assert.equal(job.notified, false, "completion can still notify the user");
+        } finally {
+            clearTimeout(completesLater);
+        }
+    });
+
+    void it("detaches when the signal aborts during the wait", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-midabort` });
+        const controller = new AbortController();
+        const abortSoon = setTimeout(() => controller.abort(), 20);
+        try {
+            const result = await tool.execute(
+                "abort-attach", { action: "attach", jobId: job.id }, controller.signal, undefined, ctx
+            );
+            assert.match(result.content[0].text, /Stopped following/);
+            assert.equal(job.notified, false);
+        } finally {
+            clearTimeout(abortSoon);
+        }
+    });
+});
 void describe("jobs list — lazy sweep", () => {
     void it("sweeps terminal+notified jobs into the recent-terminal ring", async () => {
         const { tool, reg, ctx } = harness();
