@@ -120,6 +120,27 @@ void describe("bash tool — Claude Code tool-result strings", () => {
         assert.match(res.content[0].text, /Command timed out after 1s/);
     });
 
+    void it("enforces the foreground timeout in noninteractive Pi", async () => {
+        const { tool, reg, ctx } = harness();
+        reg.nonInteractive = true;
+        const keepTestAlive = setTimeout(() => {}, 4_000);
+        try {
+            const startedAt = Date.now();
+            const res = await tool.execute(
+                "headless-timeout",
+                { command: "node -e 'setTimeout(() => console.log(\"LATE\"), 3000)'", timeout: 1 },
+                undefined,
+                undefined,
+                ctx
+            );
+            assert.ok(Date.now() - startedAt < 2_000, "timeout ends the command at its deadline");
+            assert.match(res.content[0].text, /Command timed out after 1s/);
+            assert.equal(reg.jobs.size, 0, "no background job remains after the deadline");
+        } finally {
+            clearTimeout(keepTestAlive);
+        }
+    });
+
     void it("an external signal death is reported as killed ('was stopped'), never completed", async () => {
         const { tool, reg, ctx, messages } = harness();
         await tool.execute(
