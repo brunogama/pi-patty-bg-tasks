@@ -160,6 +160,27 @@ void describe("monitor diagnostics through jobs", () => {
         assert.equal(existsSync(stderrPath), false, "cleanup reclaims the diagnostic file");
     });
 });
+
+void describe("monitor event limit", () => {
+    void it("stops a completed 600-line burst before delivering more than 500 lines", async () => {
+        const { tool, ctx, reg, messages } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        await tool.execute("burst-monitor", { command: "seq 600", description: "burst probe" }, undefined, undefined, ctx);
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        const lines = messages
+            .filter((m) => m.customType === EVENT.monitorEvent)
+            .flatMap((m) => (m as unknown as { content: string }).content.split("\n").slice(1));
+        assert.equal(lines.length, 500, "never deliver events beyond the cap");
+        const terminals = messages.filter((m) => m.customType === EVENT.taskNotification);
+        assert.equal(terminals.length, 1, "one terminal notification");
+        assert.match((terminals[0] as unknown as { content: string }).content, /<status>killed<\/status>.*too many events/s);
+        const list = await jobs.execute("burst-list", { action: "list" }, undefined, undefined, ctx);
+        assert.match(list.content[0].text, /✗ killed/, "job status matches the terminal notice");
+    });
+});
 void describe("monitor — split spawn output", () => {
     void it("writes stdout and stderr to separate files when errPath is set", async () => {
         const logPath = join(dir, "split.log");
