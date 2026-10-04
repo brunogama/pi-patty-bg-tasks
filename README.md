@@ -1,10 +1,6 @@
 # pi-patty-bg-tasks
 
 <p align="center">
-  <strong>English</strong> · <a href="README.ko.md">한국어</a> · <a href="README.zh.md">中文</a>
-</p>
-
-<p align="center">
   <strong>Long commands shouldn't freeze your agent. Background them automatically — and keep shipping.</strong>
 </p>
 
@@ -75,8 +71,10 @@ On macOS, `bash`, `bash_bg`, and command-based `monitor` jobs run through `/bin/
 | Parameter | Description |
 |-----------|-------------|
 | `command` | Shell command to run |
-| `timeout` | Custom timeout in seconds (default: 120) |
+| `timeout` | Foreground timeout in seconds (default: 120). Explicit background runs have no default timeout |
 | `run_in_background` | Start the command in the background immediately, skipping the foreground run and the auto-background timer |
+
+In non-interactive Pi (print or SDK), a foreground command stops at its timeout instead of moving to the background. For an explicit background run, a supplied `timeout` stops overruns in non-interactive Pi. In interactive Pi, it stops only commands that cannot auto-background.
 
 ### bash_bg
 
@@ -86,7 +84,7 @@ When you already know it's a long one. Starts a command in the background immedi
 |-----------|-------------|
 | `command` | Shell command to run |
 | `name` | Optional human-readable label for the job |
-| `timeout` | Optional timeout in seconds; an overrun kills only commands that can't be auto-backgrounded (e.g. `sleep`) — anything else keeps running |
+| `timeout` | Optional timeout in seconds. In non-interactive Pi, it stops any overrun. In interactive Pi, it stops only commands that cannot auto-background. |
 | `notify` | Send a completion notification (default: true) |
 
 ### jobs
@@ -98,7 +96,7 @@ Mission control for everything running in the background: list, read output, kil
 | `list` | Show all running and recently completed jobs |
 | `output` | Read the log tail of a specific job |
 | `kill` | Terminate a running job |
-| `attach` | Wait for a job to finish, then return its output |
+| `attach` | Follow live output until completion. Use `output` for the final log |
 | `search` | Regex search across all job logs |
 | `cleanup` | Purge completed/failed jobs and reclaim disk |
 | `stats` | Aggregate metrics: total started, running, completed, failed, average duration |
@@ -135,7 +133,7 @@ monitor({ ws: { url: "wss://events.example.com/stream" }, description: "deploy e
 | `persistent` | Run for the whole session (no timeout); stop with `jobs action='kill'`. Default `false`. |
 | `timeout_ms` | Deadline before the watch is killed (default `300000`, max `3600000`). Ignored when `persistent`. |
 
-Monitors share the same job registry, sidebar (shown with a `◉` pill), and `jobs` manager as the background tools — only stdout is the event stream (stderr is captured to a separate `.err` file), output is line-buffered so use `grep --line-buffered`/`awk fflush()` (never `head`), and a monitor that floods events is auto-stopped so you can restart with a tighter filter. The `ws` source needs a runtime with a global `WebSocket` (Node 22+); otherwise use a `command` like `websocat`.
+Monitors share the job registry, sidebar (`◉`), and `jobs` manager with background jobs. For command monitors, only stdout becomes events. Command stderr goes to a separate `.err` file that `jobs output` and `jobs search` can read. `jobs cleanup` removes it. Output is line-buffered, so use `grep --line-buffered` or `awk fflush()` instead of `head`. Monitors that flood events stop automatically. Restart with a tighter filter. The `ws` source requires a global `WebSocket` (Node 22+). Otherwise, use a `command` such as `websocat`.
 
 > **Persistent monitors and disk:** a non-`persistent` monitor's output log is capped (oversized output kills it), but a `persistent` monitor is expected to run for the whole session, so its log is **not** size-capped — point a long-lived `tail -f` at a filtered stream rather than a firehose, and stop it with `jobs action='kill'` when done.
 

@@ -4,7 +4,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackgroundRegistry } from "../state.ts";
 import {
@@ -17,8 +18,6 @@ import {
 } from "../registry.ts";
 import type { Job } from "../types.ts";
 
-const TMP = "/tmp/pi-patty-test";
-
 function makeJob(overrides: Partial<Job> = {}): Job {
     return {
         id: "job-test-1",
@@ -26,7 +25,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
         pid: 1,
         startTime: Date.now(),
         status: "running",
-        logPath: "/tmp/test",
+        logPath: join(tmpdir(), "test"),
         toolCallId: "tc-1",
         isBackgrounded: false,
         ...overrides,
@@ -110,13 +109,9 @@ void describe("add / forget 카운터", () => {
 });
 
 void describe("cleanupTerminal", () => {
-    void it("종료된 잡 + 로그 파일 제거", () => {
-        try {
-            rmSync(TMP, { recursive: true, force: true });
-        } catch {
-            /* ignore */
-        }
-        mkdirSync(TMP, { recursive: true });
+    void it("종료된 잡 + 로그 파일 제거", (t) => {
+        const TMP = mkdtempSync(join(tmpdir(), "pi-patty-test-"));
+        t.after(() => rmSync(TMP, { recursive: true, force: true }));
         const logPath = join(TMP, "cleanup.log");
         writeFileSync(logPath, "x".repeat(2048));
 
@@ -134,8 +129,6 @@ void describe("cleanupTerminal", () => {
         assert.equal(result.bytesReclaimed >= 2048, true);
         assert.equal(reg.jobs.size, 0);
         assert.equal(reg.recentTerminal.length, 0);
-
-        rmSync(TMP, { recursive: true, force: true });
     });
 });
 

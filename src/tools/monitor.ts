@@ -113,6 +113,7 @@ export function registerMonitorTool(pi: ExtensionAPI, reg: BackgroundRegistry): 
             const id = newJobId("monitor", reg);
             const logPath = logPathFor(id);
 
+            const stderrPath = hasCommand ? errPathFor(id) : undefined;
             // Build the event source (command or ws) behind one seam, then hand
             // it to the session, which owns the streaming/terminal lifecycle.
             const source: MonitorSource = hasWs
@@ -130,6 +131,7 @@ export function registerMonitorTool(pi: ExtensionAPI, reg: BackgroundRegistry): 
                 command: source.label,
                 pid: source.pid,
                 logPath,
+                stderrPath,
                 toolCallId: _toolCallId,
                 kind: "monitor",
             });

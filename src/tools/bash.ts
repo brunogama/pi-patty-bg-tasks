@@ -44,6 +44,7 @@ import {
     isAutoBackgroundAllowed,
     isBlankCommand,
     requireExistingCwd,
+    scheduleBackgroundTimeout,
     startBackgroundJob,
 } from "../lifecycle.ts";
 import { textBlock } from "../format.ts";
@@ -100,6 +101,7 @@ export function registerBashTool(
                 return spawnBackground({
                     toolCallId,
                     command: p.command,
+                    timeoutSeconds: p.timeout,
                     name: p.description,
                     cwd: bashCtx.cwd,
                     reg,
@@ -149,16 +151,19 @@ async function runForeground(args: {
         command,
         cwd: ctx.cwd,
         logPath,
+        keepAlive: true,
     });
 
     // Register the foreground slot so Ctrl+Shift+B can find this command.
     let pauseRequested = false;
     let handedToBackground = false;
+    let stopRequested = false;
     let pauseResolve: ((reason: "manual" | "timeout") => void) | null = null;
     const pausePromise = new Promise<"manual" | "timeout">((r) => {
         pauseResolve = r;
     });
     const requestPause = (reason: "manual" | "timeout") => {
+        if (stopRequested) return;
         pauseRequested = true;
         pauseResolve?.(reason);
     };
@@ -171,8 +176,14 @@ async function runForeground(args: {
     //     CC's 'interrupt' / background path, which never kills).
     // Long-running work is protected the CC way — by auto-backgrounding at the
     // timeout — not by refusing to honor a deliberate cancel.
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopForeground = () => {
+        stopRequested = true;
+        killProcessTree(spawned.pid, "SIGTERM");
+        forceKillTimer ??= setTimeout(() => killProcessTree(spawned.pid, "SIGKILL"), 1_000);
+    };
     const onTurnAbort = () => {
-        if (!pauseRequested) killProcessTree(spawned.pid, "SIGTERM");
+        if (!pauseRequested) stopForeground();
     };
     if (signal) {
         if (signal.aborted) onTurnAbort();
@@ -206,21 +217,16 @@ async function runForeground(args: {
         job.isBackgrounded = true;
         markStarted(reg);
         startBackgroundJob({ reg, pi, ctx, job, exit: spawned.exit });
+        spawned.unref();
     };
 
-    // Timeout timer.
     const timeoutTimer = setTimeout(() => {
-        if (reg.nonInteractive) return;
         if (!reg.foreground.has(toolCallId)) return;
-        if (!isAutoBackgroundAllowed(command)) {
-            // Not eligible for auto-background (e.g. `sleep`) — kill it, but
-            // leave a marker in the log first so the model can tell a timeout
-            // kill apart from a normal failure (Claude Code prepends
-            // "Command timed out after {duration}" to the output).
+        if (reg.nonInteractive || !isAutoBackgroundAllowed(command)) {
             try {
                 appendFileSync(logPath, `Command timed out after ${Math.round(timeoutMs / 1000)}s\n`);
-            } catch { /* best-effort — the kill below still happens */ }
-            killProcessTree(spawned.pid, "SIGTERM");
+            } catch {}
+            stopForeground();
             return;
         }
         requestPause("timeout");
@@ -233,6 +239,7 @@ async function runForeground(args: {
     const cleanup = () => {
         progressPoller?.stop();
         clearTimeout(timeoutTimer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         if (signal) signal.removeEventListener("abort", onTurnAbort);
     };
 
@@ -267,8 +274,10 @@ async function runForeground(args: {
         // Still running past the quick window — start progress polling and show
         // the "(ctrl+shift+b to run in background)" hint, like Claude Code.
         progressPoller = streamLog(logPath, onUpdate);
-        showBackgroundHint(ctx);
-        hintShown = true;
+        if (ctx.hasUI) {
+            showBackgroundHint(ctx);
+            hintShown = true;
+        }
 
         // Race: completion vs backgrounding.
         const race = await Promise.race<
@@ -309,6 +318,7 @@ async function runForeground(args: {
 function spawnBackground(args: {
     toolCallId: string;
     command: string;
+    timeoutSeconds?: number;
     name?: string;
     cwd: string;
     reg: BackgroundRegistry;
@@ -333,7 +343,8 @@ function spawnBackground(args: {
         toolCallId: args.toolCallId,
     });
     add(args.reg, job);
-    startBackgroundJob({ reg: args.reg, pi: args.pi, ctx: args.ctx, job, exit: spawned.exit });
+    const jobAc = startBackgroundJob({ reg: args.reg, pi: args.pi, ctx: args.ctx, job, exit: spawned.exit });
+    scheduleBackgroundTimeout({ job, reg: args.reg, signal: jobAc.signal, seconds: args.timeoutSeconds });
 
     return {
         content: [

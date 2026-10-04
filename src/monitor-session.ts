@@ -47,6 +47,8 @@ export function startMonitorSession(args: {
     let finishing = false;
     let windowStart = Date.now();
     let windowLines = 0;
+    let rateExceeded = false;
+    const rateSummary = `Monitor "${description}" stopped (too many events (>${MONITOR_MAX_LINES_PER_WINDOW}/${MONITOR_RATE_WINDOW_MS / 1000}s) - restart with a tighter filter)`;
 
     // Stream events stay live but passive (delivered as a follow-up, no wake) —
     // they carry data the agent is actively watching and surface on the agent's
@@ -75,16 +77,12 @@ export function startMonitorSession(args: {
             windowStart = now;
             windowLines = 0;
         }
+        const available = Math.max(0, MONITOR_MAX_LINES_PER_WINDOW - windowLines);
+        emitEvent(lines.slice(0, available));
         windowLines += lines.length;
-
-        emitEvent(lines);
-
-        // Don't trip the firehose guard while draining the final flush.
-        if (!finishing && windowLines > MONITOR_MAX_LINES_PER_WINDOW) {
-            stopMonitor(
-                "killed",
-                `Monitor "${description}" stopped (too many events (>${MONITOR_MAX_LINES_PER_WINDOW}/${MONITOR_RATE_WINDOW_MS / 1000}s) — restart with a tighter filter)`
-            );
+        if (windowLines > MONITOR_MAX_LINES_PER_WINDOW) {
+            rateExceeded = true;
+            if (!finishing) stopMonitor("killed", rateSummary);
         }
     });
 
@@ -94,27 +92,30 @@ export function startMonitorSession(args: {
     // onExit), so a user-initiated kill stays lossless.
     job.stop = source.stop;
 
-    /**
-     * Emit exactly one terminal <task-notification> for the monitor. Sent
-     * before the job is marked terminal (onExit runs ahead of completeJob), so
-     * the status/summary are explicit and eviction is left to completeJob.
-     */
     const finishMonitor = (status: TerminalStatus, summary: string): void => {
         if (terminalEmitted) return;
-        // Flush remaining lines first (while terminalEmitted is still false so
-        // the follower callback emits them), then the terminal notification.
         finishing = true;
         follower.stop(true);
         terminalEmitted = true;
-        sendTaskNotification({ reg, pi, job, status, summary, evict: false });
+        sendTaskNotification({
+            reg, pi, job,
+            status: rateExceeded ? "killed" : status,
+            summary: rateExceeded ? rateSummary : summary,
+            evict: false,
+        });
+        if (rateExceeded) {
+            terminateJobSilently(reg, job);
+            renderSidebar(reg, ctx);
+        }
     };
 
-    /** Forced stop (timeout / firehose). Emits a terminal event, then routes
-     *  through the standard silent-kill path (which calls job.stop). */
     function stopMonitor(status: TerminalStatus, summary: string): void {
+        if (terminalEmitted) return;
         finishMonitor(status, summary);
-        terminateJobSilently(reg, job);
-        renderSidebar(reg, ctx);
+        if (!rateExceeded) {
+            terminateJobSilently(reg, job);
+            renderSidebar(reg, ctx);
+        }
     }
 
     // Wire exit → terminal event. shouldNotify:false because the monitor owns

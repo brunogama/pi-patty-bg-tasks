@@ -113,6 +113,20 @@ void describe("jobs output — read-marks-notified", () => {
         await tool.execute("t4", { action: "output", jobId: job.id }, undefined, undefined, ctx);
         assert.equal(job.notified, undefined, "completion must still notify later");
     });
+    void it("keeps the full preview when a command monitor has no stderr", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-stdout-only`, kind: "monitor" });
+        job.stderrPath = join(dir, `${job.id}.err`);
+        writeFileSync(job.logPath, "X".repeat(9_000));
+        writeFileSync(job.stderrPath, "");
+        job.status = "completed";
+
+        const result = await tool.execute(
+            "stdout-only-output", { action: "output", jobId: job.id }, undefined, undefined, ctx
+        );
+        assert.match(result.content[0].text, /X{9000}/);
+        assert.doesNotMatch(result.content[0].text, /\[truncated\]|stderr:/);
+    });
 
     void it("unknown id errors with CC's exact string", async () => {
         const { tool, ctx } = harness();
@@ -123,6 +137,98 @@ void describe("jobs output — read-marks-notified", () => {
     });
 });
 
+void describe("jobs search across monitor logs", () => {
+    void it("shows stderr matches even when stdout exceeds the display limit", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-search`, kind: "monitor" });
+        job.stderrPath = join(dir, `${job.id}.err`);
+        writeFileSync(job.logPath, Array.from({ length: 25 }, (_, i) => `MATCH stdout ${i}\n`).join(""));
+        writeFileSync(job.stderrPath, "MATCH STDERR_DIAGNOSTIC\n");
+        job.status = "failed";
+
+        const result = await tool.execute(
+            "search-stderr", { action: "search", pattern: "MATCH" }, undefined, undefined, ctx
+        );
+        assert.match(result.content[0].text, /Found 26 matches/);
+        assert.match(result.content[0].text, /\.err:1: MATCH STDERR_DIAGNOSTIC/);
+    });
+    void it("retains stdout when stderr alone exceeds the display limit", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-stderr-crowded`, kind: "monitor" });
+        job.stderrPath = join(dir, `${job.id}.err`);
+        writeFileSync(job.logPath, "MATCH USER_OUTPUT\n");
+        writeFileSync(job.stderrPath, Array.from({ length: 25 }, (_, i) => `MATCH diagnostic ${i}\n`).join(""));
+        job.status = "failed";
+
+        const result = await tool.execute(
+            "search-stdout", { action: "search", pattern: "MATCH" }, undefined, undefined, ctx
+        );
+        assert.match(result.content[0].text, /Found 26 matches/);
+        assert.match(result.content[0].text, /\.log:1: MATCH USER_OUTPUT/);
+        assert.match(result.content[0].text, /\.err:1: MATCH diagnostic 0/);
+    });
+});
+
+void describe("jobs attach cancellation", () => {
+    void it("detaches immediately when its signal was already aborted", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-preabort` });
+        const controller = new AbortController();
+        controller.abort();
+        const completesLater = setTimeout(() => { job.resolveDone?.(); job.status = "completed"; }, 150);
+        try {
+            const result = await tool.execute(
+                "preaborted-attach", { action: "attach", jobId: job.id }, controller.signal, undefined, ctx
+            );
+            assert.match(result.content[0].text, /Stopped following/);
+            assert.equal(job.status, "running", "cancellation does not wait for completion");
+            assert.equal(job.notified, false, "completion can still notify the user");
+        } finally {
+            clearTimeout(completesLater);
+        }
+    });
+
+    void it("detaches when its first progress update aborts the signal", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-callback-abort` });
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+            const outcome = await Promise.race([
+                tool.execute(
+                    "callback-abort-attach", { action: "attach", jobId: job.id },
+                    controller.signal, () => controller.abort(), ctx
+                ),
+                new Promise<"hung">((resolve) => {
+                    timer = setTimeout(() => resolve("hung"), 250);
+                }),
+            ]);
+            if (outcome === "hung") assert.fail("attach ignored the abort from its first progress update");
+            assert.match(outcome.content[0].text, /Stopped following/);
+            assert.equal(job.status, "running");
+            assert.equal(job.notified, false, "later completion must still notify the user");
+        } finally {
+            if (timer) clearTimeout(timer);
+            job.resolveDone?.();
+        }
+    });
+
+    void it("detaches when the signal aborts during the wait", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-midabort` });
+        const controller = new AbortController();
+        const abortSoon = setTimeout(() => controller.abort(), 20);
+        try {
+            const result = await tool.execute(
+                "abort-attach", { action: "attach", jobId: job.id }, controller.signal, undefined, ctx
+            );
+            assert.match(result.content[0].text, /Stopped following/);
+            assert.equal(job.notified, false);
+        } finally {
+            clearTimeout(abortSoon);
+        }
+    });
+});
 void describe("jobs list — lazy sweep", () => {
     void it("sweeps terminal+notified jobs into the recent-terminal ring", async () => {
         const { tool, reg, ctx } = harness();

@@ -9,7 +9,7 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { OUTPUT_PREVIEW_CHARS, PREVIEW_CHARS, type Job } from "./types.ts";
-import { readLogTail } from "./registry.ts";
+import { readBoundedTail } from "./output.ts";
 
 export interface LogSearchHit {
     path: string;
@@ -46,8 +46,6 @@ export async function searchLogs(args: {
     };
     const jobs = [...args.jobs];
 
-    // Each job's log is an independent stream — scan them concurrently. Results
-    // come back in jobs[] order, so group ordering stays stable.
     const groups = (
         await Promise.all(jobs.map((job) => scanOneJob(job, args.pattern, options)))
     ).filter((g) => g.count > 0);
@@ -57,17 +55,19 @@ export async function searchLogs(args: {
     return { totalHits, groups };
 }
 
-/** Scan one job's log (streamed line-by-line, falling back to the tail when the
- *  file cannot be streamed), returning its hit group. */
 async function scanOneJob(
     job: Job,
     re: RegExp,
     options: ScanOptions
 ): Promise<LogSearchGroup> {
     const group: LogSearchGroup = { jobId: job.id, name: job.name, count: 0, hits: [] };
-    const scanned = await streamLogFile(job, re, group, options);
-    if (!scanned) {
-        scanTailText(job, re, readLogTail(job, OUTPUT_PREVIEW_CHARS), group, options);
+    for (const logPath of [job.logPath, job.stderrPath]) {
+        if (!logPath) continue;
+        const scanned = await streamLogFile(logPath, re, group, options);
+        if (!scanned) {
+            const tail = readBoundedTail(logPath, OUTPUT_PREVIEW_CHARS);
+            if (tail !== "(no output yet)") scanTailText(logPath, re, tail, group, options);
+        }
     }
     return group;
 }
@@ -75,10 +75,13 @@ async function scanOneJob(
 function record(group: LogSearchGroup, hit: LogSearchHit, maxHitsPerJob: number): void {
     group.count++;
     if (group.hits.length < maxHitsPerJob) group.hits.push(hit);
+    else if (group.hits.length > 0 && !group.hits.some((saved) => saved.path === hit.path)) {
+        group.hits[group.hits.length - 1] = hit;
+    }
 }
 
 async function streamLogFile(
-    job: Job,
+    logPath: string,
     re: RegExp,
     group: LogSearchGroup,
     options: ScanOptions
@@ -86,7 +89,7 @@ async function streamLogFile(
     return await new Promise<boolean>((resolve) => {
         let lineNo = 0;
         let sawFile = false;
-        const stream = createReadStream(job.logPath, { encoding: "utf-8" });
+        const stream = createReadStream(logPath, { encoding: "utf-8" });
         stream.on("error", () => resolve(false));
         const rl = createInterface({ input: stream, crlfDelay: Infinity });
         rl.on("line", (line) => {
@@ -94,7 +97,7 @@ async function streamLogFile(
             lineNo++;
             if (re.test(line)) {
                 record(group, {
-                    path: job.logPath,
+                    path: logPath,
                     line: lineNo,
                     text: truncateLine(line, options.maxLineChars),
                 }, options.maxHitsPerJob);
@@ -105,7 +108,7 @@ async function streamLogFile(
 }
 
 function scanTailText(
-    job: Job,
+    logPath: string,
     re: RegExp,
     text: string,
     group: LogSearchGroup,
@@ -115,7 +118,7 @@ function scanTailText(
     for (let i = 0; i < lines.length; i++) {
         if (re.test(lines[i])) {
             record(group, {
-                path: `${job.logPath} (log tail)`,
+                path: `${logPath} (log tail)`,
                 line: i + 1,
                 text: truncateLine(lines[i], options.maxLineChars),
             }, options.maxHitsPerJob);

@@ -1,10 +1,11 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackgroundRegistry } from "../state.ts";
 import { registerMonitorTool } from "../tools/monitor.ts";
+import { registerJobsTool } from "../tools/jobs.ts";
 import { spawnWithFileOutput } from "../spawn.ts";
 import { openWsSource, isWsSupported } from "../monitor-ws.ts";
 import { EVENT } from "../types.ts";
@@ -113,6 +114,96 @@ void describe("monitor tool — command lifecycle", () => {
     });
 });
 
+
+void describe("monitor diagnostics through jobs", () => {
+    void it("includes a failed command's stderr in jobs output", async () => {
+        const { tool, ctx, messages, reg } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        const started = await tool.execute(
+            "stderr-monitor",
+            { command: "printf 'FATAL_DIAGNOSTIC\\n' >&2; exit 7", description: "failure probe" },
+            undefined,
+            undefined,
+            ctx
+        );
+        const id = /Monitor (m[0-9a-z]{8}) started/.exec(started.content[0].text)?.[1];
+        assert.ok(id);
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
+        const output = await jobs.execute("stderr-output", { action: "output", jobId: id }, undefined, undefined, ctx);
+        assert.match(output.content[0].text, /FATAL_DIAGNOSTIC/);
+    });
+
+
+    void it("finds stderr and stdout diagnostics in jobs search", async () => {
+        const { tool, ctx, messages, reg } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        await tool.execute(
+            "search-monitor",
+            { command: "printf 'SEARCHABLE_STDOUT\\n'; printf 'SEARCHABLE_STDERR\\n' >&2; exit 7", description: "search probe" },
+            undefined, undefined, ctx
+        );
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
+        const stderr = await jobs.execute(
+            "search-stderr", { action: "search", pattern: "SEARCHABLE_STDERR" }, undefined, undefined, ctx
+        );
+        assert.match(stderr.content[0].text, /\.err:1: SEARCHABLE_STDERR/);
+        const stdout = await jobs.execute(
+            "search-stdout", { action: "search", pattern: "SEARCHABLE_STDOUT" }, undefined, undefined, ctx
+        );
+        assert.match(stdout.content[0].text, /\.log:1: SEARCHABLE_STDOUT/);
+    });
+    void it("deletes a command monitor's stderr when jobs cleanup runs", async () => {
+        const { tool, ctx, messages, reg } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        const started = await tool.execute(
+            "cleanup-monitor",
+            { command: "printf 'cleanup-diagnostic\\n' >&2", description: "cleanup probe" },
+            undefined,
+            undefined,
+            ctx
+        );
+        const logPath = /Output: (\S+)/.exec(started.content[0].text)?.[1];
+        assert.ok(logPath);
+        const stderrPath = logPath.replace(/\.log$/, ".err");
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
+        assert.equal(existsSync(stderrPath), true, "diagnostic file was created");
+        await jobs.execute("cleanup-stderr", { action: "cleanup" }, undefined, undefined, ctx);
+        assert.equal(existsSync(stderrPath), false, "cleanup reclaims the diagnostic file");
+    });
+});
+
+void describe("monitor event limit", () => {
+    void it("stops a completed 600-line burst before delivering more than 500 lines", async () => {
+        const { tool, ctx, reg, messages } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        await tool.execute("burst-monitor", { command: "seq 600", description: "burst probe" }, undefined, undefined, ctx);
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        const lines = messages
+            .filter((m) => m.customType === EVENT.monitorEvent)
+            .flatMap((m) => (m as unknown as { content: string }).content.split("\n").slice(1));
+        assert.equal(lines.length, 500, "never deliver events beyond the cap");
+        const terminals = messages.filter((m) => m.customType === EVENT.taskNotification);
+        assert.equal(terminals.length, 1, "one terminal notification");
+        assert.match((terminals[0] as unknown as { content: string }).content, /<status>killed<\/status>.*too many events/s);
+        const list = await jobs.execute("burst-list", { action: "list" }, undefined, undefined, ctx);
+        assert.match(list.content[0].text, /✗ killed/, "job status matches the terminal notice");
+    });
+});
 void describe("monitor — split spawn output", () => {
     void it("writes stdout and stderr to separate files when errPath is set", async () => {
         const logPath = join(dir, "split.log");

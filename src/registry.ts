@@ -70,6 +70,7 @@ export function createRunningJob(args: {
     pid: number;
     logPath: string;
     toolCallId: string;
+    stderrPath?: string;
     name?: string;
     kind?: JobKind;
     isBackgrounded?: boolean;
@@ -83,6 +84,7 @@ export function createRunningJob(args: {
         status: "running",
         logPath: args.logPath,
         toolCallId: args.toolCallId,
+        stderrPath: args.stderrPath,
         isBackgrounded: args.isBackgrounded ?? true,
         kind: args.kind,
     };
@@ -156,12 +158,14 @@ export function cleanupTerminal(reg: BackgroundRegistry): {
         deletedLogs.add(logPath);
         return deleteLogFile(logPath);
     };
+    const deleteJobLogs = (job: Job): number =>
+        deleteOnce(job.logPath) + (job.stderrPath ? deleteOnce(job.stderrPath) : 0);
 
     const idsToRemove: string[] = [];
     for (const [id, job] of reg.jobs.entries()) {
         if (isTerminalStatus(job.status)) {
             idsToRemove.push(id);
-            bytes += deleteOnce(job.logPath);
+            bytes += deleteJobLogs(job);
             purged++;
         }
     }
@@ -170,7 +174,7 @@ export function cleanupTerminal(reg: BackgroundRegistry): {
     }
     // The recent-terminal ring is all terminal jobs too — sweep their logs.
     for (const job of reg.recentTerminal) {
-        bytes += deleteOnce(job.logPath);
+        bytes += deleteJobLogs(job);
         purged++;
     }
     reg.recentTerminal.length = 0;
@@ -196,6 +200,10 @@ function deleteLogFile(logPath: string): number {
  * actually changes. Call after any state change that affects running jobs.
  */
 export function renderSidebar(reg: BackgroundRegistry, ctx: UiContext): void {
+    if (ctx.hasUI === false) {
+        stopSidebarTicker(reg);
+        return;
+    }
     const pills: string[] = [];
     let runningCount = 0;
     const runningLogs = new Set<string>();

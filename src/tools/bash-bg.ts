@@ -9,14 +9,13 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
-import { appendFileSync } from "node:fs";
 import type { BackgroundRegistry } from "../state.ts";
-import { isTerminalStatus, type UiContext } from "../types.ts";
-import { killProcessTree, spawnWithFileOutput } from "../spawn.ts";
+import type { UiContext } from "../types.ts";
+import { spawnWithFileOutput } from "../spawn.ts";
 import { add, createRunningJob, newJobId, logPathFor } from "../registry.ts";
 import {
-    assertJobSlot, detectBlockedSleep, isAutoBackgroundAllowed, isBlankCommand,
-    requireExistingCwd, SLEEP_WAIT_GUIDANCE, startBackgroundJob,
+    assertJobSlot, detectBlockedSleep, isBlankCommand,
+    requireExistingCwd, SLEEP_WAIT_GUIDANCE, scheduleBackgroundTimeout, startBackgroundJob,
 } from "../lifecycle.ts";
 import { textBlock } from "../format.ts";
 
@@ -72,29 +71,7 @@ export function registerBashBgTool(pi: ExtensionAPI, reg: BackgroundRegistry): v
                 shouldNotify: p.notify !== false,
             });
 
-            // Optional timeout — an overrun kills commands that were never
-            // eligible for auto-backgrounding (e.g. `sleep`); anything else
-            // simply keeps running, like Claude Code (no decision turn).
-            if (p.timeout) {
-                const timer = setTimeout(() => {
-                    if (isTerminalStatus(job.status) || reg.nonInteractive) return;
-                    if (!isAutoBackgroundAllowed(p.command)) {
-                        // Mirror the foreground timeout-kill: mark the log first
-                        // so the model can tell a timeout kill apart from a
-                        // normal failure, then kill WITH a notification (the
-                        // exit handler maps the signal death to "killed" and
-                        // sends the <task-notification>) — the agent must learn
-                        // its command was timeout-killed.
-                        try {
-                            appendFileSync(logPath, `Command timed out after ${p.timeout}s\n`);
-                        } catch { /* best-effort — the kill below still happens */ }
-                        killProcessTree(job.pid, "SIGTERM");
-                    }
-                }, p.timeout * 1000);
-                (timer as NodeJS.Timeout).unref();
-                jobAc.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
-            }
-
+            scheduleBackgroundTimeout({ job, reg, signal: jobAc.signal, seconds: p.timeout });
             return {
                 content: [textBlock(
                     `Command running in background with ID: ${id}.` +

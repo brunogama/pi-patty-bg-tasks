@@ -1,5 +1,6 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { BackgroundRegistry } from "../state.ts";
 import { registerBashTool } from "../tools/bash.ts";
 import { killProcessTree } from "../spawn.ts";
@@ -33,6 +34,7 @@ function harness() {
     registerBashTool(pi as never, reg, {} as never);
     const ctx = {
         cwd: process.cwd(),
+        hasUI: true,
         ui: {
             notify: () => {},
             setWidget: () => {},
@@ -120,6 +122,61 @@ void describe("bash tool — Claude Code tool-result strings", () => {
         assert.match(res.content[0].text, /Command timed out after 1s/);
     });
 
+    void it("enforces the foreground timeout in noninteractive Pi", async () => {
+        const { tool, reg, ctx } = harness();
+        reg.nonInteractive = true;
+        const keepTestAlive = setTimeout(() => {}, 4_000);
+        try {
+            const startedAt = Date.now();
+            const res = await tool.execute(
+                "headless-timeout",
+                { command: "node -e 'setTimeout(() => console.log(\"LATE\"), 3000)'", timeout: 1 },
+                undefined,
+                undefined,
+                ctx
+            );
+            assert.ok(Date.now() - startedAt < 2_000, "timeout ends the command at its deadline");
+            assert.match(res.content[0].text, /Command timed out after 1s/);
+            assert.equal(reg.jobs.size, 0, "no background job remains after the deadline");
+        } finally {
+            clearTimeout(keepTestAlive);
+        }
+    });
+
+
+    void it("does not render the foreground hint in headless Pi after the quick window", async () => {
+        const { tool, reg, ctx } = harness();
+        reg.nonInteractive = true;
+        const headlessCtx = {
+            ...ctx,
+            hasUI: false,
+            ui: { ...ctx.ui, setWidget(): never { throw new Error("headless UI touched"); } },
+        };
+        const result = await tool.execute(
+            "headless-hint", { command: "node -e 'setTimeout(() => console.log(\"SLOW_HEADLESS\"), 2400)'" },
+            undefined, undefined, headlessCtx
+        );
+        assert.match(result.content[0].text, /SLOW_HEADLESS/);
+    });
+
+    void it("honors an explicit deadline for headless run_in_background", async () => {
+        const { tool, reg, ctx, messages } = harness();
+        reg.nonInteractive = true;
+        await tool.execute(
+            "headless-explicit-background",
+            { command: "node -e 'setTimeout(() => console.log(\"LATE\"), 1200)'", run_in_background: true, timeout: 0.2 },
+            undefined, undefined, ctx
+        );
+        const job = onlyJob(reg);
+        try {
+            for (let attempt = 0; attempt < 40 && job.status === "running"; attempt++) await sleep(20);
+            assert.equal(job.status, "killed", "explicit background timeout ends an overrun");
+            assert.match(readFileSync(job.logPath, "utf-8"), /Command timed out after 0\.2s/);
+            assert.equal(messages.filter((m) => m.customType === EVENT.taskNotification).length, 1);
+        } finally {
+            killProcessTree(job.pid, "SIGKILL");
+        }
+    });
     void it("an external signal death is reported as killed ('was stopped'), never completed", async () => {
         const { tool, reg, ctx, messages } = harness();
         await tool.execute(

@@ -21,9 +21,7 @@
         "src/",
         "!src/__tests__/**",
         "index.ts",
-        "README.md",
-        "README.ko.md",
-        "README.zh.md"
+        "README.md"
     ],
     "pi": {
         "extensions": [

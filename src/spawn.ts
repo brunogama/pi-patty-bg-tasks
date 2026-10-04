@@ -15,6 +15,7 @@ export interface SpawnResult {
     pid: number;
     logPath: string;
     exit: Promise<SpawnExit>;
+    unref(): void;
 }
 
 /**
@@ -38,6 +39,7 @@ export function spawnWithFileOutput(args: {
      *  separately (readable, but never emitted as an event). */
     errPath?: string;
     signal?: AbortSignal;
+    keepAlive?: boolean;
 }): SpawnResult {
     ensureLogDir(args.logPath);
     const outFd = openSync(args.logPath, "w");
@@ -75,7 +77,12 @@ export function spawnWithFileOutput(args: {
         // `sleep 30 &`). 'exit' fires when the shell itself exits, returning
         // control immediately. Output still flushes fine — the kernel writes
         // directly to the file fd, no JS drain needed.
-        proc.on("exit", (code, signal) => resolve({ code, signal }));
+        proc.on("exit", (code, signal) => {
+            if (process.platform !== "win32" && proc.pid && proc.pid > 0) {
+                try { process.kill(-proc.pid, "SIGTERM"); } catch {}
+            }
+            resolve({ code, signal });
+        });
         proc.on("error", () => resolve({ code: 1, signal: null }));
     });
 
@@ -97,9 +104,9 @@ export function spawnWithFileOutput(args: {
     }
     void exit.finally(() => args.signal?.removeEventListener("abort", onAbort));
 
-    proc.unref();
+    if (!args.keepAlive) proc.unref();
 
-    return { pid, logPath: args.logPath, exit };
+    return { pid, logPath: args.logPath, exit, unref: () => proc.unref() };
 }
 
 /** The log dir is a constant (registry.LOG_DIR), so create it once per process

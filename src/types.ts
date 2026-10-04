@@ -71,6 +71,7 @@ export interface Job {
     status: JobStatus;
     exitCode?: number;
     logPath: string;
+    stderrPath?: string;
     proc?: ChildProcess;
     toolCallId: string;
     donePromise?: Promise<void>;
@@ -123,6 +124,7 @@ export const DELIVER_FOLLOWUP = { deliverAs: "followUp", triggerTurn: false } as
 
 // --- UI context ---
 export interface UiContext {
+    hasUI: boolean;
     ui: {
         notify(message: string, level?: "info" | "warning" | "error"): void;
         setWidget(

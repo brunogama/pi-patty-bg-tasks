@@ -4,6 +4,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { killProcessTree, processExists } from "../spawn.ts";
 import {
     abortJob,
@@ -86,7 +88,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
         pid: 1,
         startTime: 0,
         status: "running",
-        logPath: "/tmp/x",
+        logPath: join(tmpdir(), "x"),
         toolCallId: "tc-1",
         isBackgrounded: false,
         ...overrides,
@@ -177,6 +179,7 @@ void describe("backgroundActiveForeground", () => {
 
 function makeCtx(notifications: string[] = []): UiContext {
     return {
+        hasUI: true,
         ui: {
             notify: (message) => notifications.push(message),
             setWidget: () => {},
