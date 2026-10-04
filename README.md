@@ -1,10 +1,6 @@
 # pi-patty-bg-tasks
 
 <p align="center">
-  <strong>English</strong> · <a href="README.ko.md">한국어</a> · <a href="README.zh.md">中文</a>
-</p>
-
-<p align="center">
   <strong>Long commands shouldn't freeze your agent. Background them automatically — and keep shipping.</strong>
 </p>
 
@@ -75,10 +71,10 @@ On macOS, `bash`, `bash_bg`, and command-based `monitor` jobs run through `/bin/
 | Parameter | Description |
 |-----------|-------------|
 | `command` | Shell command to run |
-| `timeout` | Foreground timeout in seconds (default: 120). An explicit background run has no deadline unless you set one |
+| `timeout` | Foreground timeout in seconds (default: 120). Explicit background runs have no default timeout |
 | `run_in_background` | Start the command in the background immediately, skipping the foreground run and the auto-background timer |
 
-In non-interactive Pi (print or SDK), a foreground command stops at its timeout instead of moving to the background.
+In non-interactive Pi (print or SDK), a foreground command stops at its timeout instead of moving to the background. For an explicit background run, a supplied `timeout` stops overruns in non-interactive Pi. In interactive Pi, it stops only commands that cannot auto-background.
 
 ### bash_bg
 
@@ -88,7 +84,7 @@ When you already know it's a long one. Starts a command in the background immedi
 |-----------|-------------|
 | `command` | Shell command to run |
 | `name` | Optional human-readable label for the job |
-| `timeout` | Optional deadline in seconds. In non-interactive Pi, it stops any overrun. In interactive Pi, it stops only commands that cannot auto-background. |
+| `timeout` | Optional timeout in seconds. In non-interactive Pi, it stops any overrun. In interactive Pi, it stops only commands that cannot auto-background. |
 | `notify` | Send a completion notification (default: true) |
 
 ### jobs
