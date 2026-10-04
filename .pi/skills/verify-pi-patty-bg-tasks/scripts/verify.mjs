@@ -162,16 +162,12 @@ if (mode !== "doctor" && mode !== "drive") {
     rmSync(agentDir, { recursive: true, force: true });
 } else {
     const evidenceDir = mode === "drive" ? mkdtempSync(join(tmpdir(), "pi-patty-proof-")) : undefined;
-    if (evidenceDir) {
-        proof = {
-            feature,
-            headRevision: execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-            verifierSha256: createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex"),
-            startedAt: new Date().toISOString(),
-            actions: [],
-        };
-    }
+    if (evidenceDir) proof = { feature, startedAt: new Date().toISOString(), actions: [] };
     try {
+        if (proof) {
+            proof.verifierSha256 = createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
+            proof.headRevision = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+        }
         const loadedTools = await start();
         if (mode === "doctor") {
             const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
