@@ -137,6 +137,29 @@ void describe("monitor diagnostics through jobs", () => {
         assert.match(output.content[0].text, /FATAL_DIAGNOSTIC/);
     });
 
+
+    void it("finds stderr and stdout diagnostics in jobs search", async () => {
+        const { tool, ctx, messages, reg } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        await tool.execute(
+            "search-monitor",
+            { command: "printf 'SEARCHABLE_STDOUT\\n'; printf 'SEARCHABLE_STDERR\\n' >&2; exit 7", description: "search probe" },
+            undefined, undefined, ctx
+        );
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
+        const stderr = await jobs.execute(
+            "search-stderr", { action: "search", pattern: "SEARCHABLE_STDERR" }, undefined, undefined, ctx
+        );
+        assert.match(stderr.content[0].text, /\.err:1: SEARCHABLE_STDERR/);
+        const stdout = await jobs.execute(
+            "search-stdout", { action: "search", pattern: "SEARCHABLE_STDOUT" }, undefined, undefined, ctx
+        );
+        assert.match(stdout.content[0].text, /\.log:1: SEARCHABLE_STDOUT/);
+    });
     void it("deletes a command monitor's stderr when jobs cleanup runs", async () => {
         const { tool, ctx, messages, reg } = makeHarness();
         let jobs!: CapturedTool;
