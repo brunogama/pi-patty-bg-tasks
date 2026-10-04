@@ -77,7 +77,12 @@ export function spawnWithFileOutput(args: {
         // `sleep 30 &`). 'exit' fires when the shell itself exits, returning
         // control immediately. Output still flushes fine — the kernel writes
         // directly to the file fd, no JS drain needed.
-        proc.on("exit", (code, signal) => resolve({ code, signal }));
+        proc.on("exit", (code, signal) => {
+            if (process.platform !== "win32" && proc.pid && proc.pid > 0) {
+                try { process.kill(-proc.pid, "SIGTERM"); } catch { /* process group already ended */ }
+            }
+            resolve({ code, signal });
+        });
         proc.on("error", () => resolve({ code: 1, signal: null }));
     });
 

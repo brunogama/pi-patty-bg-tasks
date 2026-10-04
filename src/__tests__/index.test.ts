@@ -8,8 +8,9 @@
 
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import extension from "../index.ts";
+import { killProcessTree } from "../spawn.ts";
 import { EVENT } from "../types.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -73,6 +74,7 @@ function makePi() {
 const uiCtx = {
     cwd: process.cwd(),
     ui: {
+    hasUI: true,
         notify() {},
         setWidget() {},
         setStatus() {},
@@ -126,6 +128,34 @@ void describe("headless extension context", () => {
         await jobs.execute("headless-attach", { action: "attach", jobId: id }, undefined, undefined, ctx);
         const output = await jobs.execute("headless-output", { action: "output", jobId: id }, undefined, undefined, ctx);
         assert.match(output.content[0].text, /HEADLESS_OUTPUT/);
+    });
+});
+
+void describe("completed shell process ownership", () => {
+    void it("ends child processes before the background job reports completion", async () => {
+        const h = startExtension();
+        const started = await h.tools.get("bash_bg")!.execute(
+            "child-owner",
+            { command: "node -e 'setTimeout(() => {}, 5000)' & echo CHILD_PID=$!" },
+            undefined, undefined, uiCtx
+        );
+        const id = /with ID: (\w+)\./.exec(started.content[0].text)?.[1];
+        assert.ok(id);
+        const jobs = h.tools.get("jobs")!;
+        await jobs.execute("child-attach", { action: "attach", jobId: id }, undefined, undefined, uiCtx);
+        const output = await jobs.execute("child-output", { action: "output", jobId: id }, undefined, undefined, uiCtx);
+        const pid = Number(/CHILD_PID=(\d+)/.exec(output.content[0].text)?.[1]);
+        assert.ok(pid > 0, output.content[0].text);
+        const running = () => {
+            const ps = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf-8" });
+            return ps.status === 0 && !/^\s*Z/.test(ps.stdout);
+        };
+        try {
+            for (let attempt = 0; attempt < 20 && running(); attempt++) await sleep(25);
+            assert.equal(running(), false, "child must not outlive its completed shell job");
+        } finally {
+            killProcessTree(pid, "SIGKILL");
+        }
     });
 });
 
