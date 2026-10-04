@@ -86,6 +86,24 @@ function startExtension() {
     return h;
 }
 
+void describe("shell commands on macOS", () => {
+    void it("runs the zsh dialect through foreground and background tools", { skip: process.platform !== "darwin" }, async () => {
+        const h = startExtension();
+        const bash = h.tools.get("bash")!;
+        const foreground = await bash.execute("shell-fg", { command: "print -r -- ZSH_FOREGROUND" }, undefined, undefined, uiCtx);
+        assert.equal(foreground.content[0].text, "ZSH_FOREGROUND\n");
+
+        const bashBg = h.tools.get("bash_bg")!;
+        const started = await bashBg.execute("shell-bg", { command: "print -r -- ZSH_BACKGROUND" }, undefined, undefined, uiCtx);
+        const id = /with ID: (\w+)\./.exec(started.content[0].text)?.[1];
+        assert.ok(id);
+        const jobs = h.tools.get("jobs")!;
+        await jobs.execute("shell-attach", { action: "attach", jobId: id }, undefined, undefined, uiCtx);
+        const output = await jobs.execute("shell-output", { action: "output", jobId: id }, undefined, undefined, uiCtx);
+        assert.match(output.content[0].text, /ZSH_BACKGROUND/);
+    });
+});
+
 void describe("session_start — registry is born empty (no revival)", () => {
     void it("ignores a stale persisted state entry entirely", async () => {
         const h = startExtension();

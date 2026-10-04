@@ -27,7 +27,7 @@ export function registerBashBgTool(pi: ExtensionAPI, reg: BackgroundRegistry): v
         name: "bash_bg",
         label: "Background Bash",
         description:
-            "Start a bash command in the background immediately. " +
+            "Start a shell command with zsh on macOS or bash elsewhere in the background immediately. " +
             "Output is saved to /tmp/pi-bg/<jobId>.log.",
         promptSnippet: "Start long-running commands directly in the background",
         promptGuidelines: [

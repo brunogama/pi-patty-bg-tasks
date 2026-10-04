@@ -62,7 +62,7 @@ export function registerBashTool(
         ...originalBash,
         name: "bash",
         description:
-            "Run a bash command. Long-running commands auto-background after timeout. " +
+            "Run a shell command with zsh on macOS or bash elsewhere. Long-running commands auto-background after timeout. " +
             "Set run_in_background=true to start in background immediately. " +
             "Use /bg to manually background a running command.",
         promptSnippet:

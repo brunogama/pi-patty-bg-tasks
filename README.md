@@ -70,6 +70,8 @@ Hit **Ctrl+Shift+B** whenever commands are running to background them all on the
 
 The built-in bash tool, with a survival instinct. Commands run normally — but if one blows past 120 seconds, it silently slides into the background. No decision prompt, no forced turn: the tool result itself (`Command running in background with ID: …`) tells the agent where the output is going.
 
+On macOS, `bash`, `bash_bg`, and command-based `monitor` jobs run through `/bin/zsh -c`. On other platforms, they use `bash -c`. `agent_bg` executes Pi directly.
+
 | Parameter | Description |
 |-----------|-------------|
 | `command` | Shell command to run |

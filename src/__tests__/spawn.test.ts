@@ -28,6 +28,44 @@ describe("spawnWithFileOutput", () => {
         unlinkSync(logPath);
     });
 
+    test("runs zsh builtins on macOS", { skip: process.platform !== "darwin" }, async () => {
+        const { spawnWithFileOutput } = await import("../spawn.ts");
+        mkdirSync(testDir, { recursive: true });
+        const logPath = join(testDir, "test-zsh-builtin.log");
+        try {
+            const result = spawnWithFileOutput({
+                command: "print -r -- ZSH_OK",
+                cwd: process.cwd(),
+                logPath,
+            });
+            const { code } = await result.exit;
+            const output = readFileSync(logPath, "utf-8");
+            assert.equal(code, 0, output);
+            assert.equal(output, "ZSH_OK\n");
+        } finally {
+            if (existsSync(logPath)) unlinkSync(logPath);
+        }
+    });
+
+    test("runs file and fileArgs without a shell", async () => {
+        const { spawnWithFileOutput } = await import("../spawn.ts");
+        mkdirSync(testDir, { recursive: true });
+        const logPath = join(testDir, "test-direct-exec.log");
+        try {
+            const result = spawnWithFileOutput({
+                file: "/bin/echo",
+                fileArgs: ["$HOME"],
+                cwd: process.cwd(),
+                logPath,
+            });
+            const { code } = await result.exit;
+            assert.equal(code, 0);
+            assert.equal(readFileSync(logPath, "utf-8"), "$HOME\n");
+        } finally {
+            if (existsSync(logPath)) unlinkSync(logPath);
+        }
+    });
+
     test("captures stderr to same log file", async () => {
         const { spawnWithFileOutput } = await import("../spawn.ts");
         mkdirSync(testDir, { recursive: true });
