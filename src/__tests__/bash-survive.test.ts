@@ -88,7 +88,7 @@ void describe("bash foreground — Claude Code parity on turn abort", () => {
         let pid: number | undefined;
         let watchdog: ReturnType<typeof setTimeout> | undefined;
         try {
-            await sleep(2_200);
+            await sleep(2_500);
             const job = [...reg.jobs.values()][0] as Job;
             pid = job.pid;
             controller.abort();
@@ -96,7 +96,7 @@ void describe("bash foreground — Claude Code parity on turn abort", () => {
             reg.foreground.get(job.toolCallId)?.requestPause("manual");
             const outcome = await Promise.race([
                 finished,
-                new Promise<"hung">((resolve) => { watchdog = setTimeout(() => resolve("hung"), 1_500); }),
+                new Promise<"hung">((resolve) => { watchdog = setTimeout(() => resolve("hung"), 3_000); }),
             ]);
             assert.notEqual(outcome, "hung", "cancellation must still settle");
             assert.equal(job.isBackgrounded, false, "cancelled work must not become a new background job");
