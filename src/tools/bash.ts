@@ -149,6 +149,7 @@ async function runForeground(args: {
         command,
         cwd: ctx.cwd,
         logPath,
+        keepAlive: true,
     });
 
     // Register the foreground slot so Ctrl+Shift+B can find this command.
@@ -206,6 +207,7 @@ async function runForeground(args: {
         job.isBackgrounded = true;
         markStarted(reg);
         startBackgroundJob({ reg, pi, ctx, job, exit: spawned.exit });
+        spawned.unref();
     };
 
     // Timeout timer.

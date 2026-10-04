@@ -1,5 +1,6 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { BackgroundRegistry } from "../state.ts";
 import { registerBashTool } from "../tools/bash.ts";
 import { processExists, killProcessTree } from "../spawn.ts";
@@ -80,6 +81,56 @@ void describe("bash foreground — Claude Code parity on turn abort", () => {
     after(() => {
         for (const pid of spawnedPids) {
             try { killProcessTree(pid, "SIGKILL"); } catch { /* already gone */ }
+        }
+    });
+});
+
+void describe("headless Pi foreground command", () => {
+    void it("keeps the subprocess alive until its tool result is ready", () => {
+        const command = "node -e 'setTimeout(() => console.log(\"SDK_COMPLETE\"), 300)'";
+        const source = `
+            import { BackgroundRegistry } from './src/state.ts';
+            import { registerBashTool } from './src/tools/bash.ts';
+            let tool;
+            registerBashTool({ registerTool(def) { tool = def; }, sendMessage() {} }, new BackgroundRegistry(), {});
+            const ctx = { cwd: process.cwd(), hasUI: false, ui: { notify() {}, setWidget() {}, setStatus() {} } };
+            const result = await tool.execute('sdk-foreground', { command: ${JSON.stringify(command)} }, undefined, undefined, ctx);
+            process.stdout.write(result.content[0].text);
+        `;
+        const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source], {
+            cwd: process.cwd(),
+            encoding: "utf-8",
+            timeout: 4_000,
+        });
+        assert.equal(child.status, 0, child.stderr || String(child.error));
+        assert.match(child.stdout, /SDK_COMPLETE/);
+    });
+
+    void it("releases the host process when a foreground command becomes background work", () => {
+        const command = "node -e 'setTimeout(() => console.log(\"LATE\"), 4000)'";
+        const source = `
+            import { BackgroundRegistry } from './src/state.ts';
+            import { registerBashTool } from './src/tools/bash.ts';
+            let tool;
+            const reg = new BackgroundRegistry();
+            registerBashTool({ registerTool(def) { tool = def; }, sendMessage() {} }, reg, {});
+            const ctx = { cwd: process.cwd(), hasUI: false, ui: { notify() {}, setWidget() {}, setStatus() {} } };
+            setTimeout(() => reg.foreground.get('sdk-handoff')?.requestPause('manual'), 100);
+            const result = await tool.execute('sdk-handoff', { command: ${JSON.stringify(command)} }, undefined, undefined, ctx);
+            process.stdout.write(JSON.stringify({ result: result.content[0].text, pid: [...reg.jobs.values()][0]?.pid }));
+        `;
+        const started = Date.now();
+        const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source], {
+            cwd: process.cwd(), encoding: "utf-8", timeout: 6_000,
+        });
+        const elapsed = Date.now() - started;
+        const pid = /"pid":(\d+)/.exec(child.stdout)?.[1];
+        try {
+            assert.equal(child.status, 0, child.stderr || String(child.error));
+            assert.match(child.stdout, /manually backgrounded/);
+            assert.ok(elapsed < 3_600, `background handoff should not wait for the 4s child (${elapsed}ms)`);
+        } finally {
+            if (pid) killProcessTree(Number(pid), "SIGKILL");
         }
     });
 });
