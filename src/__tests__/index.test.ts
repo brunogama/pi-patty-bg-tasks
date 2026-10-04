@@ -104,6 +104,31 @@ void describe("shell commands on macOS", () => {
     });
 });
 
+void describe("headless extension context", () => {
+    void it("runs background commands without reading an unavailable UI theme", async () => {
+        const h = startExtension();
+        const ctx = {
+            cwd: process.cwd(),
+            hasUI: false,
+            ui: {
+                notify() {},
+                setWidget(): never { throw new Error("headless UI touched"); },
+                setStatus(): never { throw new Error("headless UI touched"); },
+                get theme(): never { throw new Error("Theme not initialized. Call initTheme() first."); },
+            },
+        };
+        const started = await h.tools.get("bash_bg")!.execute(
+            "headless-start", { command: "echo HEADLESS_OUTPUT" }, undefined, undefined, ctx
+        );
+        const id = /with ID: (\w+)\./.exec(started.content[0].text)?.[1];
+        assert.ok(id);
+        const jobs = h.tools.get("jobs")!;
+        await jobs.execute("headless-attach", { action: "attach", jobId: id }, undefined, undefined, ctx);
+        const output = await jobs.execute("headless-output", { action: "output", jobId: id }, undefined, undefined, ctx);
+        assert.match(output.content[0].text, /HEADLESS_OUTPUT/);
+    });
+});
+
 void describe("session_start — registry is born empty (no revival)", () => {
     void it("ignores a stale persisted state entry entirely", async () => {
         const h = startExtension();

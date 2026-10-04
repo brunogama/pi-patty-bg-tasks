@@ -177,6 +177,7 @@ void describe("backgroundActiveForeground", () => {
 
 function makeCtx(notifications: string[] = []): UiContext {
     return {
+        hasUI: true,
         ui: {
             notify: (message) => notifications.push(message),
             setWidget: () => {},

@@ -159,6 +159,7 @@ function makeCtx(
     actions?: { abort(): void }
 ): UiContext & { abort(): void } {
     return {
+        hasUI: true,
         ui: {
             notify: (message) => notifications.push(message),
             setWidget: () => {},

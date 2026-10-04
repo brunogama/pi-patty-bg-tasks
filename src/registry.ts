@@ -200,6 +200,10 @@ function deleteLogFile(logPath: string): number {
  * actually changes. Call after any state change that affects running jobs.
  */
 export function renderSidebar(reg: BackgroundRegistry, ctx: UiContext): void {
+    if (ctx.hasUI === false) {
+        stopSidebarTicker(reg);
+        return;
+    }
     const pills: string[] = [];
     let runningCount = 0;
     const runningLogs = new Set<string>();

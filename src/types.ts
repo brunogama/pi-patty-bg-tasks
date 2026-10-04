@@ -124,6 +124,7 @@ export const DELIVER_FOLLOWUP = { deliverAs: "followUp", triggerTurn: false } as
 
 // --- UI context ---
 export interface UiContext {
+    hasUI: boolean;
     ui: {
         notify(message: string, level?: "info" | "warning" | "error"): void;
         setWidget(
