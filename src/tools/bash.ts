@@ -212,15 +212,12 @@ async function runForeground(args: {
         spawned.unref();
     };
 
-    // Timeout timer.
     const timeoutTimer = setTimeout(() => {
         if (!reg.foreground.has(toolCallId)) return;
         if (reg.nonInteractive || !isAutoBackgroundAllowed(command)) {
-            // Headless calls cannot hand off a foreground command to the next turn.
-            // Mark the deadline in the log before killing the process group.
             try {
                 appendFileSync(logPath, `Command timed out after ${Math.round(timeoutMs / 1000)}s\n`);
-            } catch { /* best-effort — the kill below still happens */ }
+            } catch {}
             killProcessTree(spawned.pid, "SIGTERM");
             return;
         }

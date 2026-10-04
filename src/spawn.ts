@@ -79,7 +79,7 @@ export function spawnWithFileOutput(args: {
         // directly to the file fd, no JS drain needed.
         proc.on("exit", (code, signal) => {
             if (process.platform !== "win32" && proc.pid && proc.pid > 0) {
-                try { process.kill(-proc.pid, "SIGTERM"); } catch { /* process group already ended */ }
+                try { process.kill(-proc.pid, "SIGTERM"); } catch {}
             }
             resolve({ code, signal });
         });

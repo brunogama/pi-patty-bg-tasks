@@ -97,7 +97,7 @@ export function scheduleBackgroundTimeout(args: {
         if (!reg.nonInteractive && isAutoBackgroundAllowed(job.command)) return;
         try {
             appendFileSync(job.logPath, `Command timed out after ${seconds}s\n`);
-        } catch { /* best-effort: process still stops */ }
+        } catch {}
         killProcessTree(job.pid, "SIGTERM");
     }, seconds * 1000);
     timer.unref();

@@ -92,15 +92,8 @@ export function startMonitorSession(args: {
     // onExit), so a user-initiated kill stays lossless.
     job.stop = source.stop;
 
-    /**
-     * Emit exactly one terminal <task-notification> for the monitor. Sent
-     * before the job is marked terminal (onExit runs ahead of completeJob), so
-     * the status/summary are explicit.
-     */
     const finishMonitor = (status: TerminalStatus, summary: string): void => {
         if (terminalEmitted) return;
-        // Flush remaining lines first (while terminalEmitted is still false so
-        // the follower callback emits them), then the terminal notification.
         finishing = true;
         follower.stop(true);
         terminalEmitted = true;
@@ -116,8 +109,6 @@ export function startMonitorSession(args: {
         }
     };
 
-    /** Forced stop (timeout / firehose). Emits a terminal event, then routes
-     *  through the standard silent-kill path (which calls job.stop). */
     function stopMonitor(status: TerminalStatus, summary: string): void {
         if (terminalEmitted) return;
         finishMonitor(status, summary);
