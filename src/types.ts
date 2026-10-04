@@ -71,6 +71,7 @@ export interface Job {
     status: JobStatus;
     exitCode?: number;
     logPath: string;
+    stderrPath?: string;
     proc?: ChildProcess;
     toolCallId: string;
     donePromise?: Promise<void>;

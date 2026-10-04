@@ -70,6 +70,7 @@ export function createRunningJob(args: {
     pid: number;
     logPath: string;
     toolCallId: string;
+    stderrPath?: string;
     name?: string;
     kind?: JobKind;
     isBackgrounded?: boolean;
@@ -83,6 +84,7 @@ export function createRunningJob(args: {
         status: "running",
         logPath: args.logPath,
         toolCallId: args.toolCallId,
+        stderrPath: args.stderrPath,
         isBackgrounded: args.isBackgrounded ?? true,
         kind: args.kind,
     };

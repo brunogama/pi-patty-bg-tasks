@@ -32,6 +32,7 @@ import {
 } from "../registry.ts";
 import { formatDuration, formatJobLine, jobLabel, oneLine, textBlock } from "../format.ts";
 import { streamLog } from "../output.ts";
+import { readBoundedTail } from "../output.ts";
 import { searchLogs } from "../log-search.ts";
 import { markNotified } from "../notify.ts";
 import {
@@ -153,13 +154,17 @@ async function outputAction(
     // it notified, suppressing the separate <task-notification>. Peeking at a
     // still-running job does NOT mark — its completion must still notify.
     if (isTerminalStatus(job.status)) markNotified(job);
-    const out = readLogTail(job, OUTPUT_PREVIEW_CHARS).trimEnd();
+    const out = readLogTail(job, job.stderrPath ? OUTPUT_PREVIEW_CHARS / 2 : OUTPUT_PREVIEW_CHARS).trimEnd();
+    const err = job.stderrPath ? readBoundedTail(job.stderrPath, OUTPUT_PREVIEW_CHARS / 2).trimEnd() : "";
+    const output = err && err !== "(no output yet)"
+        ? `${out === "(no output yet)" ? "" : `${out}\n`}stderr:\n${err}`
+        : out;
     const label = jobLabel(job);
     return {
         content: [
             textBlock(
-                out
-                    ? `Output for ${label} (${job.status})\n${out}`
+                output
+                    ? `Output for ${label} (${job.status})\n${output}`
                     : `No output yet for ${label} (${job.status}). Log: ${job.logPath}`
             ),
         ],

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackgroundRegistry } from "../state.ts";
 import { registerMonitorTool } from "../tools/monitor.ts";
+import { registerJobsTool } from "../tools/jobs.ts";
 import { spawnWithFileOutput } from "../spawn.ts";
 import { openWsSource, isWsSupported } from "../monitor-ws.ts";
 import { EVENT } from "../types.ts";
@@ -113,6 +114,29 @@ void describe("monitor tool — command lifecycle", () => {
     });
 });
 
+
+void describe("monitor diagnostics through jobs", () => {
+    void it("includes a failed command's stderr in jobs output", async () => {
+        const { tool, ctx, messages, reg } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        const started = await tool.execute(
+            "stderr-monitor",
+            { command: "printf 'FATAL_DIAGNOSTIC\\n' >&2; exit 7", description: "failure probe" },
+            undefined,
+            undefined,
+            ctx
+        );
+        const id = /Monitor (m[0-9a-z]{8}) started/.exec(started.content[0].text)?.[1];
+        assert.ok(id);
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
+        const output = await jobs.execute("stderr-output", { action: "output", jobId: id }, undefined, undefined, ctx);
+        assert.match(output.content[0].text, /FATAL_DIAGNOSTIC/);
+    });
+});
 void describe("monitor — split spawn output", () => {
     void it("writes stdout and stderr to separate files when errPath is set", async () => {
         const logPath = join(dir, "split.log");
