@@ -73,8 +73,10 @@ agent_bg({ prompt: "重构 auth 模块" })
 | 参数 | 说明 |
 |------|------|
 | `command` | 要运行的 shell 命令 |
-| `timeout` | 自定义超时(秒,默认:120) |
+| `timeout` | 前台超时(秒,默认:120)。显式后台运行仅在设置此参数后才有截止时间。 |
 | `run_in_background` | 跳过前台运行和自动后台计时器,立即在后台启动命令 |
+
+在非交互式 Pi(打印模式或 SDK)中,前台命令达到超时时会终止,而不是转入后台。
 
 ### bash_bg
 
@@ -84,7 +86,7 @@ agent_bg({ prompt: "重构 auth 模块" })
 |------|------|
 | `command` | 要运行的 shell 命令 |
 | `name` | 可选的可读作业标签 |
-| `timeout` | 可选超时(秒);超时只杀掉无法自动转后台的命令(如 `sleep`),其余照跑不误 |
+| `timeout` | 可选截止时间(秒)。非交互式 Pi 会终止所有超时命令。交互式 Pi 只终止无法自动转后台的命令。 |
 | `notify` | 发送完成通知(默认:true) |
 
 ### jobs
@@ -96,7 +98,7 @@ agent_bg({ prompt: "重构 auth 模块" })
 | `list` | 显示所有运行中和最近完成的作业 |
 | `output` | 读取某个作业的日志尾部 |
 | `kill` | 终止运行中的作业 |
-| `attach` | 等作业完成后返回它的输出 |
+| `attach` | 跟踪实时输出并等待作业完成。用 `output` 查看最终日志 |
 | `search` | 在所有作业日志里做正则搜索 |
 | `cleanup` | 清除已完成/失败的作业,回收磁盘空间 |
 | `stats` | 聚合指标:总启动数、运行中、已完成、失败、平均时长 |
@@ -133,7 +135,7 @@ monitor({ ws: { url: "wss://events.example.com/stream" }, description: "部署�
 | `persistent` | 运行整个会话(无超时);用 `jobs action='kill'` 停止。默认 `false`。 |
 | `timeout_ms` | 终止该监视的截止时间(默认 `300000`,最大 `3600000`)。`persistent` 时忽略。 |
 
-监视器与后台工具共享同一套作业注册表、侧边栏(以 `◉` 标记)和 `jobs` 管理器——只有 stdout 是事件流(stderr 会捕获到单独的 `.err` 文件),输出按行缓冲,所以请用 `grep --line-buffered`/`awk fflush()`,**绝不要**用 `head`。一个疯狂刷事件的监视器会被自动停止,你可以用更严格的过滤器重新启动。`ws` 源需要带有全局 `WebSocket` 的运行时(Node 22+),否则请改用 `websocat` 之类的 `command`。
+监视器与后台作业共享作业注册表、侧边栏(`◉` 标记)和 `jobs` 管理器。对于命令监视器,只有 stdout 会成为事件。命令的 stderr 写入单独的 `.err` 文件,可通过 `jobs output` 和 `jobs search` 查看。`jobs cleanup` 也会删除它。输出按行缓冲,请用 `grep --line-buffered` 或 `awk fflush()`,不要用 `head`。事件过多时监视器会自动停止,可收窄过滤条件后重新启动。`ws` 源需要全局 `WebSocket`(Node 22+)。否则请使用 `websocat` 等 `command`。
 
 > **持久监视器与磁盘:** 非 `persistent` 监视器的输出日志有上限(输出过大时会被终止)。但 `persistent` 监视器本就预期跑满整个会话,因此其日志**不**做大小限制——让长期运行的 `tail -f` 对准经过过滤的流而不是 firehose,用完后用 `jobs action='kill'` 停止。
 
