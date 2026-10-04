@@ -266,8 +266,10 @@ async function runForeground(args: {
         // Still running past the quick window — start progress polling and show
         // the "(ctrl+shift+b to run in background)" hint, like Claude Code.
         progressPoller = streamLog(logPath, onUpdate);
-        showBackgroundHint(ctx);
-        hintShown = true;
+        if (ctx.hasUI) {
+            showBackgroundHint(ctx);
+            hintShown = true;
+        }
 
         // Race: completion vs backgrounding.
         const race = await Promise.race<

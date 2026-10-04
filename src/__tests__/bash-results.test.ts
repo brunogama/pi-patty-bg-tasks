@@ -33,6 +33,7 @@ function harness() {
     registerBashTool(pi as never, reg, {} as never);
     const ctx = {
         cwd: process.cwd(),
+        hasUI: true,
         ui: {
             notify: () => {},
             setWidget: () => {},
@@ -141,6 +142,21 @@ void describe("bash tool — Claude Code tool-result strings", () => {
         }
     });
 
+
+    void it("does not render the foreground hint in headless Pi after the quick window", async () => {
+        const { tool, reg, ctx } = harness();
+        reg.nonInteractive = true;
+        const headlessCtx = {
+            ...ctx,
+            hasUI: false,
+            ui: { ...ctx.ui, setWidget(): never { throw new Error("headless UI touched"); } },
+        };
+        const result = await tool.execute(
+            "headless-hint", { command: "node -e 'setTimeout(() => console.log(\"SLOW_HEADLESS\"), 2400)'" },
+            undefined, undefined, headlessCtx
+        );
+        assert.match(result.content[0].text, /SLOW_HEADLESS/);
+    });
     void it("an external signal death is reported as killed ('was stopped'), never completed", async () => {
         const { tool, reg, ctx, messages } = harness();
         await tool.execute(
