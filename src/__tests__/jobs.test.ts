@@ -143,6 +143,31 @@ void describe("jobs attach cancellation", () => {
         }
     });
 
+    void it("detaches when its first progress update aborts the signal", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-callback-abort` });
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+            const outcome = await Promise.race([
+                tool.execute(
+                    "callback-abort-attach", { action: "attach", jobId: job.id },
+                    controller.signal, () => controller.abort(), ctx
+                ),
+                new Promise<"hung">((resolve) => {
+                    timer = setTimeout(() => resolve("hung"), 250);
+                }),
+            ]);
+            if (outcome === "hung") assert.fail("attach ignored the abort from its first progress update");
+            assert.match(outcome.content[0].text, /Stopped following/);
+            assert.equal(job.status, "running");
+            assert.equal(job.notified, false, "later completion must still notify the user");
+        } finally {
+            if (timer) clearTimeout(timer);
+            job.resolveDone?.();
+        }
+    });
+
     void it("detaches when the signal aborts during the wait", async () => {
         const { tool, reg, ctx } = harness();
         const job = mkJob(reg, { id: `job-${process.pid}-midabort` });

@@ -225,26 +225,25 @@ async function attachAction(
         }
 
         if (!signal?.aborted) {
-            onUpdate?.({
-                content: [textBlock(`Following ${label} live output — waiting for it to finish…`)],
-                details: undefined,
-            });
-
-            const poller = streamLog(job.logPath, onUpdate);
-            poller.ref();
             let onAbort: (() => void) | undefined;
+            const abortPromise = signal ? new Promise<void>((resolve) => {
+                onAbort = resolve;
+                signal.addEventListener("abort", onAbort, { once: true });
+            }) : undefined;
+            let poller: ReturnType<typeof streamLog> | undefined;
             try {
-                if (signal) {
-                    const abortPromise = new Promise<void>((resolve) => {
-                        onAbort = resolve;
-                        signal.addEventListener("abort", onAbort, { once: true });
-                    });
-                    await Promise.race([job.donePromise, abortPromise]);
-                } else {
-                    await job.donePromise;
+                onUpdate?.({
+                    content: [textBlock(`Following ${label} live output — waiting for it to finish…`)],
+                    details: undefined,
+                });
+                if (!signal?.aborted) {
+                    poller = streamLog(job.logPath, onUpdate);
+                    poller.ref();
+                    if (abortPromise) await Promise.race([job.donePromise, abortPromise]);
+                    else await job.donePromise;
                 }
             } finally {
-                poller.stop();
+                poller?.stop();
                 if (signal && onAbort) signal.removeEventListener("abort", onAbort);
             }
         }
