@@ -61,7 +61,7 @@ async function scanOneJob(
     options: ScanOptions
 ): Promise<LogSearchGroup> {
     const group: LogSearchGroup = { jobId: job.id, name: job.name, count: 0, hits: [] };
-    for (const logPath of [job.stderrPath, job.logPath]) {
+    for (const logPath of [job.logPath, job.stderrPath]) {
         if (!logPath) continue;
         const scanned = await streamLogFile(logPath, re, group, options);
         if (!scanned) {
@@ -75,6 +75,9 @@ async function scanOneJob(
 function record(group: LogSearchGroup, hit: LogSearchHit, maxHitsPerJob: number): void {
     group.count++;
     if (group.hits.length < maxHitsPerJob) group.hits.push(hit);
+    else if (group.hits.length > 0 && !group.hits.some((saved) => saved.path === hit.path)) {
+        group.hits[group.hits.length - 1] = hit;
+    }
 }
 
 async function streamLogFile(

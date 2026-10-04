@@ -152,6 +152,21 @@ void describe("jobs search across monitor logs", () => {
         assert.match(result.content[0].text, /Found 26 matches/);
         assert.match(result.content[0].text, /\.err:1: MATCH STDERR_DIAGNOSTIC/);
     });
+    void it("retains stdout when stderr alone exceeds the display limit", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-stderr-crowded`, kind: "monitor" });
+        job.stderrPath = join(dir, `${job.id}.err`);
+        writeFileSync(job.logPath, "MATCH USER_OUTPUT\n");
+        writeFileSync(job.stderrPath, Array.from({ length: 25 }, (_, i) => `MATCH diagnostic ${i}\n`).join(""));
+        job.status = "failed";
+
+        const result = await tool.execute(
+            "search-stdout", { action: "search", pattern: "MATCH" }, undefined, undefined, ctx
+        );
+        assert.match(result.content[0].text, /Found 26 matches/);
+        assert.match(result.content[0].text, /\.log:1: MATCH USER_OUTPUT/);
+        assert.match(result.content[0].text, /\.err:1: MATCH diagnostic 0/);
+    });
 });
 
 void describe("jobs attach cancellation", () => {
