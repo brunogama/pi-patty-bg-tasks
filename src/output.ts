@@ -68,7 +68,7 @@ export function pollFileTail(
     logPath: string,
     onUpdate: (text: string) => void,
     intervalMs = 1_000
-): { stop: () => void } {
+): { stop: () => void; ref: () => void } {
     let lastSize = 0;
     let lastContent = "";
     let stopped = false;
@@ -104,6 +104,7 @@ export function pollFileTail(
     (timer as NodeJS.Timeout).unref();
 
     return {
+        ref() { timer.ref(); },
         stop() {
             stopped = true;
             clearTimeout(timer);
@@ -125,7 +126,7 @@ export type ToolTextUpdate = (update: {
 export function streamLog(
     logPath: string,
     onUpdate: ToolTextUpdate | undefined
-): { stop: () => void } {
+): { stop: () => void; ref: () => void } {
     return pollFileTail(logPath, (text) => {
         onUpdate?.({ content: [{ type: "text", text }], details: undefined });
     });

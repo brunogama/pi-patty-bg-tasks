@@ -234,6 +234,7 @@ async function attachAction(
         // Stream the live log tail while we wait, so "attach" shows progress
         // instead of sitting silent.
         const poller = streamLog(job.logPath, onUpdate);
+        poller.ref();
         let onAbort: (() => void) | undefined;
         try {
             if (signal && !signal.aborted) {

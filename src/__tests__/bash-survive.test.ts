@@ -85,7 +85,7 @@ void describe("bash foreground — Claude Code parity on turn abort", () => {
     });
 });
 
-void describe("headless Pi foreground command", () => {
+void describe("headless Pi process lifetime", () => {
     void it("keeps the subprocess alive until its tool result is ready", () => {
         const command = "node -e 'setTimeout(() => console.log(\"SDK_COMPLETE\"), 300)'";
         const source = `
@@ -132,5 +132,32 @@ void describe("headless Pi foreground command", () => {
         } finally {
             if (pid) killProcessTree(Number(pid), "SIGKILL");
         }
+    });
+
+    void it("keeps the host alive while jobs attach waits for a background command", () => {
+        const source = `
+            import { BackgroundRegistry } from './src/state.ts';
+            import { registerBashBgTool } from './src/tools/bash-bg.ts';
+            import { registerJobsTool } from './src/tools/jobs.ts';
+            const tools = new Map();
+            const reg = new BackgroundRegistry();
+            const pi = { registerTool(def) { tools.set(def.name, def); }, sendMessage() {} };
+            registerBashBgTool(pi, reg);
+            registerJobsTool(pi, reg);
+            const ctx = { cwd: process.cwd(), hasUI: false, ui: { notify() {}, setWidget() {}, setStatus() {} } };
+            const started = await tools.get('bash_bg').execute('sdk-background', {
+                command: "node -e 'setTimeout(() => console.log(\\\"ATTACH_DONE\\\"), 300)'",
+            }, undefined, undefined, ctx);
+            const id = /with ID: (\\w+)\\./.exec(started.content[0].text)?.[1];
+            if (!id) throw new Error('missing background job ID');
+            await tools.get('jobs').execute('sdk-attach', { action: 'attach', jobId: id }, undefined, undefined, ctx);
+            const output = await tools.get('jobs').execute('sdk-output', { action: 'output', jobId: id }, undefined, undefined, ctx);
+            process.stdout.write(output.content[0].text);
+        `;
+        const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source], {
+            cwd: process.cwd(), encoding: "utf-8", timeout: 4_000,
+        });
+        assert.equal(child.status, 0, child.stderr || String(child.error));
+        assert.match(child.stdout, /ATTACH_DONE/);
     });
 });
