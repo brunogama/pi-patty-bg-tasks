@@ -78,6 +78,35 @@ void describe("bash foreground — Claude Code parity on turn abort", () => {
         assert.ok(processExists(pid), "backgrounded command survives the abort");
     });
 
+    void it("does not background an already-canceled shell during its termination grace period", async () => {
+        const { tool, reg, ctx } = harness();
+        const controller = new AbortController();
+        const finished = tool.execute(
+            "cancel-then-pause", { command: "trap '' TERM; while :; do sleep 0.1; done" },
+            controller.signal, undefined, ctx
+        );
+        let pid: number | undefined;
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
+        try {
+            await sleep(2_200);
+            const job = [...reg.jobs.values()][0] as Job;
+            pid = job.pid;
+            controller.abort();
+            await sleep(100);
+            reg.foreground.get(job.toolCallId)?.requestPause("manual");
+            const outcome = await Promise.race([
+                finished,
+                new Promise<"hung">((resolve) => { watchdog = setTimeout(() => resolve("hung"), 1_500); }),
+            ]);
+            assert.notEqual(outcome, "hung", "cancellation must still settle");
+            assert.equal(job.isBackgrounded, false, "cancelled work must not become a new background job");
+            assert.equal(processExists(pid), false, "the canceled shell must exit");
+        } finally {
+            if (watchdog) clearTimeout(watchdog);
+            if (pid) killProcessTree(pid, "SIGKILL");
+        }
+    });
+
     after(() => {
         for (const pid of spawnedPids) {
             try { killProcessTree(pid, "SIGKILL"); } catch { /* already gone */ }
@@ -173,9 +202,10 @@ void describe("headless Pi process lifetime", () => {
                 command: "trap '' TERM; while :; do sleep 0.1; done",
             }, abort.signal, undefined, ctx);
             setTimeout(() => process.stdout.write('CHILD_PID=' + [...reg.jobs.values()][0]?.pid + '\\n'), 150);
-            setTimeout(() => abort.abort(), 400);
+            let abortedAt = 0;
+            setTimeout(() => { abortedAt = performance.now(); abort.abort(); }, 400);
             await result;
-            process.stdout.write('CANCEL_RETURNED');
+            process.stdout.write('CANCEL_ELAPSED_MS=' + Math.round(performance.now() - abortedAt) + '\\nCANCEL_RETURNED');
         `;
         const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source], {
             cwd: process.cwd(), encoding: "utf-8", timeout: 5_000,
@@ -184,6 +214,10 @@ void describe("headless Pi process lifetime", () => {
         try {
             assert.equal(child.status, 0, child.stderr || String(child.error));
             assert.match(child.stdout, /CANCEL_RETURNED/);
+            assert.ok(pid, "the foreground shell PID is observable");
+            const elapsed = Number(/CANCEL_ELAPSED_MS=(\d+)/.exec(child.stdout)?.[1]);
+            assert.ok(elapsed >= 900 && elapsed < 3_000, `expected the SIGKILL grace period, got ${elapsed}ms`);
+            assert.equal(processExists(Number(pid)), false, "the stopped shell does not survive cancellation");
         } finally {
             if (pid) killProcessTree(Number(pid), "SIGKILL");
         }

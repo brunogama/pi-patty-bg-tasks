@@ -157,11 +157,13 @@ async function runForeground(args: {
     // Register the foreground slot so Ctrl+Shift+B can find this command.
     let pauseRequested = false;
     let handedToBackground = false;
+    let stopRequested = false;
     let pauseResolve: ((reason: "manual" | "timeout") => void) | null = null;
     const pausePromise = new Promise<"manual" | "timeout">((r) => {
         pauseResolve = r;
     });
     const requestPause = (reason: "manual" | "timeout") => {
+        if (stopRequested) return;
         pauseRequested = true;
         pauseResolve?.(reason);
     };
@@ -176,6 +178,7 @@ async function runForeground(args: {
     // timeout — not by refusing to honor a deliberate cancel.
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
     const stopForeground = () => {
+        stopRequested = true;
         killProcessTree(spawned.pid, "SIGTERM");
         forceKillTimer ??= setTimeout(() => killProcessTree(spawned.pid, "SIGKILL"), 1_000);
     };
