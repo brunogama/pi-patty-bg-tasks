@@ -158,12 +158,14 @@ export function cleanupTerminal(reg: BackgroundRegistry): {
         deletedLogs.add(logPath);
         return deleteLogFile(logPath);
     };
+    const deleteJobLogs = (job: Job): number =>
+        deleteOnce(job.logPath) + (job.stderrPath ? deleteOnce(job.stderrPath) : 0);
 
     const idsToRemove: string[] = [];
     for (const [id, job] of reg.jobs.entries()) {
         if (isTerminalStatus(job.status)) {
             idsToRemove.push(id);
-            bytes += deleteOnce(job.logPath);
+            bytes += deleteJobLogs(job);
             purged++;
         }
     }
@@ -172,7 +174,7 @@ export function cleanupTerminal(reg: BackgroundRegistry): {
     }
     // The recent-terminal ring is all terminal jobs too — sweep their logs.
     for (const job of reg.recentTerminal) {
-        bytes += deleteOnce(job.logPath);
+        bytes += deleteJobLogs(job);
         purged++;
     }
     reg.recentTerminal.length = 0;

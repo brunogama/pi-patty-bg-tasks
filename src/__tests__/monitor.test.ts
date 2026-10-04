@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackgroundRegistry } from "../state.ts";
@@ -135,6 +135,29 @@ void describe("monitor diagnostics through jobs", () => {
         assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
         const output = await jobs.execute("stderr-output", { action: "output", jobId: id }, undefined, undefined, ctx);
         assert.match(output.content[0].text, /FATAL_DIAGNOSTIC/);
+    });
+
+    void it("deletes a command monitor's stderr when jobs cleanup runs", async () => {
+        const { tool, ctx, messages, reg } = makeHarness();
+        let jobs!: CapturedTool;
+        registerJobsTool({ registerTool: (def: CapturedTool) => { jobs = def; } } as never, reg);
+        const started = await tool.execute(
+            "cleanup-monitor",
+            { command: "printf 'cleanup-diagnostic\\n' >&2", description: "cleanup probe" },
+            undefined,
+            undefined,
+            ctx
+        );
+        const logPath = /Output: (\S+)/.exec(started.content[0].text)?.[1];
+        assert.ok(logPath);
+        const stderrPath = logPath.replace(/\.log$/, ".err");
+        for (let attempt = 0; attempt < 40 && !messages.some((m) => m.customType === EVENT.taskNotification); attempt++) {
+            await sleep(25);
+        }
+        assert.ok(messages.some((m) => m.customType === EVENT.taskNotification), "monitor exited");
+        assert.equal(existsSync(stderrPath), true, "diagnostic file was created");
+        await jobs.execute("cleanup-stderr", { action: "cleanup" }, undefined, undefined, ctx);
+        assert.equal(existsSync(stderrPath), false, "cleanup reclaims the diagnostic file");
     });
 });
 void describe("monitor — split spawn output", () => {
