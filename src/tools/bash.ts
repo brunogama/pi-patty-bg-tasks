@@ -174,8 +174,13 @@ async function runForeground(args: {
     //     CC's 'interrupt' / background path, which never kills).
     // Long-running work is protected the CC way — by auto-backgrounding at the
     // timeout — not by refusing to honor a deliberate cancel.
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopForeground = () => {
+        killProcessTree(spawned.pid, "SIGTERM");
+        forceKillTimer ??= setTimeout(() => killProcessTree(spawned.pid, "SIGKILL"), 1_000);
+    };
     const onTurnAbort = () => {
-        if (!pauseRequested) killProcessTree(spawned.pid, "SIGTERM");
+        if (!pauseRequested) stopForeground();
     };
     if (signal) {
         if (signal.aborted) onTurnAbort();
@@ -218,7 +223,7 @@ async function runForeground(args: {
             try {
                 appendFileSync(logPath, `Command timed out after ${Math.round(timeoutMs / 1000)}s\n`);
             } catch {}
-            killProcessTree(spawned.pid, "SIGTERM");
+            stopForeground();
             return;
         }
         requestPause("timeout");
@@ -231,6 +236,7 @@ async function runForeground(args: {
     const cleanup = () => {
         progressPoller?.stop();
         clearTimeout(timeoutTimer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         if (signal) signal.removeEventListener("abort", onTurnAbort);
     };
 

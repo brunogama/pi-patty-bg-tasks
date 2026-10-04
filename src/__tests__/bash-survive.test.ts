@@ -160,4 +160,32 @@ void describe("headless Pi process lifetime", () => {
         assert.equal(child.status, 0, child.stderr || String(child.error));
         assert.match(child.stdout, /ATTACH_DONE/);
     });
+    void it("returns after canceling a foreground shell that ignores SIGTERM", () => {
+        const source = `
+            import { BackgroundRegistry } from './src/state.ts';
+            import { registerBashTool } from './src/tools/bash.ts';
+            let tool;
+            const reg = new BackgroundRegistry();
+            registerBashTool({ registerTool(def) { tool = def; }, sendMessage() {} }, reg, {});
+            const ctx = { cwd: process.cwd(), hasUI: false, ui: { notify() {}, setWidget() {}, setStatus() {} } };
+            const abort = new AbortController();
+            const result = tool.execute('sdk-cancel', {
+                command: "trap '' TERM; while :; do sleep 0.1; done",
+            }, abort.signal, undefined, ctx);
+            setTimeout(() => process.stdout.write('CHILD_PID=' + [...reg.jobs.values()][0]?.pid + '\\n'), 150);
+            setTimeout(() => abort.abort(), 400);
+            await result;
+            process.stdout.write('CANCEL_RETURNED');
+        `;
+        const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source], {
+            cwd: process.cwd(), encoding: "utf-8", timeout: 5_000,
+        });
+        const pid = /CHILD_PID=(\d+)/.exec(child.stdout)?.[1];
+        try {
+            assert.equal(child.status, 0, child.stderr || String(child.error));
+            assert.match(child.stdout, /CANCEL_RETURNED/);
+        } finally {
+            if (pid) killProcessTree(Number(pid), "SIGKILL");
+        }
+    });
 });
