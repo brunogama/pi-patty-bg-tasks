@@ -6,7 +6,7 @@
  * Monitoring (progress polling, stall detection) lives in monitoring.ts.
  */
 
-import { statSync as fsStatSync } from "node:fs";
+import { appendFileSync, statSync as fsStatSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
     isTerminalStatus,
@@ -81,6 +81,27 @@ export function startBackgroundJob(args: {
     });
     renderSidebar(args.reg, args.ctx);
     return jobAc;
+}
+
+export function scheduleBackgroundTimeout(args: {
+    job: Job;
+    reg: BackgroundRegistry;
+    signal: AbortSignal;
+    seconds?: number;
+}): void {
+    const { job, reg, signal, seconds } = args;
+    if (!seconds) return;
+
+    const timer = setTimeout(() => {
+        if (isTerminalStatus(job.status)) return;
+        if (!reg.nonInteractive && isAutoBackgroundAllowed(job.command)) return;
+        try {
+            appendFileSync(job.logPath, `Command timed out after ${seconds}s\n`);
+        } catch { /* best-effort: process still stops */ }
+        killProcessTree(job.pid, "SIGTERM");
+    }, seconds * 1000);
+    timer.unref();
+    signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
 }
 
 // --- Terminal-state marking ----------------------------------------------

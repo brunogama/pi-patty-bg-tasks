@@ -1,5 +1,6 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { BackgroundRegistry } from "../state.ts";
 import { registerBashTool } from "../tools/bash.ts";
 import { killProcessTree } from "../spawn.ts";
@@ -156,6 +157,25 @@ void describe("bash tool — Claude Code tool-result strings", () => {
             undefined, undefined, headlessCtx
         );
         assert.match(result.content[0].text, /SLOW_HEADLESS/);
+    });
+
+    void it("honors an explicit deadline for headless run_in_background", async () => {
+        const { tool, reg, ctx, messages } = harness();
+        reg.nonInteractive = true;
+        await tool.execute(
+            "headless-explicit-background",
+            { command: "node -e 'setTimeout(() => console.log(\"LATE\"), 1200)'", run_in_background: true, timeout: 0.2 },
+            undefined, undefined, ctx
+        );
+        const job = onlyJob(reg);
+        try {
+            for (let attempt = 0; attempt < 40 && job.status === "running"; attempt++) await sleep(20);
+            assert.equal(job.status, "killed", "explicit background timeout ends an overrun");
+            assert.match(readFileSync(job.logPath, "utf-8"), /Command timed out after 0\.2s/);
+            assert.equal(messages.filter((m) => m.customType === EVENT.taskNotification).length, 1);
+        } finally {
+            killProcessTree(job.pid, "SIGKILL");
+        }
     });
     void it("an external signal death is reported as killed ('was stopped'), never completed", async () => {
         const { tool, reg, ctx, messages } = harness();

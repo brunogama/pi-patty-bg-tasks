@@ -44,6 +44,7 @@ import {
     isAutoBackgroundAllowed,
     isBlankCommand,
     requireExistingCwd,
+    scheduleBackgroundTimeout,
     startBackgroundJob,
 } from "../lifecycle.ts";
 import { textBlock } from "../format.ts";
@@ -100,6 +101,7 @@ export function registerBashTool(
                 return spawnBackground({
                     toolCallId,
                     command: p.command,
+                    timeoutSeconds: p.timeout,
                     name: p.description,
                     cwd: bashCtx.cwd,
                     reg,
@@ -310,6 +312,7 @@ async function runForeground(args: {
 function spawnBackground(args: {
     toolCallId: string;
     command: string;
+    timeoutSeconds?: number;
     name?: string;
     cwd: string;
     reg: BackgroundRegistry;
@@ -334,7 +337,8 @@ function spawnBackground(args: {
         toolCallId: args.toolCallId,
     });
     add(args.reg, job);
-    startBackgroundJob({ reg: args.reg, pi: args.pi, ctx: args.ctx, job, exit: spawned.exit });
+    const jobAc = startBackgroundJob({ reg: args.reg, pi: args.pi, ctx: args.ctx, job, exit: spawned.exit });
+    scheduleBackgroundTimeout({ job, reg: args.reg, signal: jobAc.signal, seconds: args.timeoutSeconds });
 
     return {
         content: [
