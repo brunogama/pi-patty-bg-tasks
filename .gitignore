@@ -3,5 +3,8 @@ package-lock.json
 *.log
 .DS_Store
 .npmrc
-.pi/
+.pi/*
+!.pi/skills/
+.pi/skills/*
+!.pi/skills/verify-pi-patty-bg-tasks/
 .env
