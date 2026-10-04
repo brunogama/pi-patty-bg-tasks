@@ -61,7 +61,7 @@ async function scanOneJob(
     options: ScanOptions
 ): Promise<LogSearchGroup> {
     const group: LogSearchGroup = { jobId: job.id, name: job.name, count: 0, hits: [] };
-    for (const logPath of [job.logPath, job.stderrPath]) {
+    for (const logPath of [job.stderrPath, job.logPath]) {
         if (!logPath) continue;
         const scanned = await streamLogFile(logPath, re, group, options);
         if (!scanned) {

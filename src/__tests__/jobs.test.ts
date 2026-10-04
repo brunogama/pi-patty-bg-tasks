@@ -113,6 +113,20 @@ void describe("jobs output — read-marks-notified", () => {
         await tool.execute("t4", { action: "output", jobId: job.id }, undefined, undefined, ctx);
         assert.equal(job.notified, undefined, "completion must still notify later");
     });
+    void it("keeps the full preview when a command monitor has no stderr", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-stdout-only`, kind: "monitor" });
+        job.stderrPath = join(dir, `${job.id}.err`);
+        writeFileSync(job.logPath, "X".repeat(9_000));
+        writeFileSync(job.stderrPath, "");
+        job.status = "completed";
+
+        const result = await tool.execute(
+            "stdout-only-output", { action: "output", jobId: job.id }, undefined, undefined, ctx
+        );
+        assert.match(result.content[0].text, /X{9000}/);
+        assert.doesNotMatch(result.content[0].text, /\[truncated\]|stderr:/);
+    });
 
     void it("unknown id errors with CC's exact string", async () => {
         const { tool, ctx } = harness();
@@ -123,6 +137,22 @@ void describe("jobs output — read-marks-notified", () => {
     });
 });
 
+void describe("jobs search across monitor logs", () => {
+    void it("shows stderr matches even when stdout exceeds the display limit", async () => {
+        const { tool, reg, ctx } = harness();
+        const job = mkJob(reg, { id: `job-${process.pid}-search`, kind: "monitor" });
+        job.stderrPath = join(dir, `${job.id}.err`);
+        writeFileSync(job.logPath, Array.from({ length: 25 }, (_, i) => `MATCH stdout ${i}\n`).join(""));
+        writeFileSync(job.stderrPath, "MATCH STDERR_DIAGNOSTIC\n");
+        job.status = "failed";
+
+        const result = await tool.execute(
+            "search-stderr", { action: "search", pattern: "MATCH" }, undefined, undefined, ctx
+        );
+        assert.match(result.content[0].text, /Found 26 matches/);
+        assert.match(result.content[0].text, /\.err:1: MATCH STDERR_DIAGNOSTIC/);
+    });
+});
 
 void describe("jobs attach cancellation", () => {
     void it("detaches immediately when its signal was already aborted", async () => {
