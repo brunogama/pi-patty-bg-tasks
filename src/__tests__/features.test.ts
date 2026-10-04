@@ -11,7 +11,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { killProcessTree, processExists } from "../spawn.ts";
 import { BackgroundRegistry } from "../state.ts";
@@ -25,8 +26,6 @@ import {
 import { formatJobLine } from "../format.ts";
 import type { Job } from "../types.ts";
 
-const TMP = "/tmp/pi-patty-features-test";
-
 function makeJob(overrides: Partial<Job> = {}): Job {
     return {
         id: newJobId("shell"),
@@ -34,7 +33,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
         pid: 1,
         startTime: Date.now(),
         status: "completed",
-        logPath: "/tmp/x",
+        logPath: join(tmpdir(), "x"),
         toolCallId: "tc-1",
         isBackgrounded: false,
         ...overrides,
@@ -56,14 +55,9 @@ void describe("bash_bg --name 라벨", () => {
 });
 
 void describe("jobs.search 정규식 검색", () => {
-    void it("여러 잡 로그에서 정규식 매치", () => {
-        try {
-            rmSync(TMP, { recursive: true, force: true });
-        } catch {
-            /* ignore */
-        }
-        mkdirSync(TMP, { recursive: true });
-
+    void it("여러 잡 로그에서 정규식 매치", (t) => {
+        const TMP = mkdtempSync(join(tmpdir(), "pi-patty-features-test-"));
+        t.after(() => rmSync(TMP, { recursive: true, force: true }));
         const logA = join(TMP, "a.log");
         const logB = join(TMP, "b.log");
         writeFileSync(logA, "line 1\nERROR: foo failed\nline 3\n");
@@ -105,20 +99,13 @@ void describe("jobs.search 정규식 검색", () => {
         }
         assert.equal(hitsA, 1);
         assert.equal(hitsB, 1);
-
-        rmSync(TMP, { recursive: true, force: true });
     });
 });
 
 void describe("jobs.cleanup", () => {
-    void it("실행 중 잡은 보존, 종료된 잡은 제거", () => {
-        try {
-            rmSync(TMP, { recursive: true, force: true });
-        } catch {
-            /* ignore */
-        }
-        mkdirSync(TMP, { recursive: true });
-
+    void it("실행 중 잡은 보존, 종료된 잡은 제거", (t) => {
+        const TMP = mkdtempSync(join(tmpdir(), "pi-patty-features-test-"));
+        t.after(() => rmSync(TMP, { recursive: true, force: true }));
         const reg = new BackgroundRegistry();
         const liveLog = join(TMP, "live.log");
         const deadLog = join(TMP, "dead.log");
@@ -148,8 +135,6 @@ void describe("jobs.cleanup", () => {
         // 라이브 잡은 살아있다.
         assert.ok(reg.jobs.has("job-live"));
         assert.ok(!reg.jobs.has("job-dead"));
-
-        rmSync(TMP, { recursive: true, force: true });
     });
 });
 

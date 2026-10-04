@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { showBackgroundHint, clearBackgroundHint } from "../hint.ts";
 import type { UiContext } from "../types.ts";
 
@@ -51,7 +53,7 @@ void describe("background hint", () => {
     });
 
     void it("shows the same hint inside tmux (no double-press note)", () => {
-        withTmux("/tmp/tmux-1/default,123,0", () => {
+        withTmux(join(tmpdir(), "tmux-1", "default,123,0"), () => {
             const { calls, ctx } = makeCtx();
             showBackgroundHint(ctx);
             const line = calls[0].content?.[0] ?? "";

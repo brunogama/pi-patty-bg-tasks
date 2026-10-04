@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BackgroundRegistry } from "../state.ts";
 import {
     buildTaskNotification,
@@ -11,6 +13,8 @@ import {
 import { completeJob } from "../lifecycle.ts";
 import { add } from "../registry.ts";
 import { EVENT, type Job, type UiContext } from "../types.ts";
+
+const LOG_PATH = join(tmpdir(), "pi-bg", "job-1-1.log");
 
 interface Captured {
     customType: string;
@@ -53,7 +57,7 @@ function mkJob(over: Partial<Job>): Job {
         startTime: Date.now(),
         status: "completed",
         exitCode: 0,
-        logPath: "/tmp/pi-bg/job-1-1.log",
+        logPath: LOG_PATH,
         toolCallId: "tc-42",
         isBackgrounded: true,
         ...over,
@@ -71,7 +75,7 @@ void describe("buildTaskNotification — CC's exact XML", () => {
         const xml = buildTaskNotification({
             taskId: "job-1-1",
             toolUseId: "tc-42",
-            outputFile: "/tmp/pi-bg/job-1-1.log",
+            outputFile: LOG_PATH,
             status: "completed",
             summary: `Background command "npm test" completed (exit code 0)`,
         });
@@ -81,7 +85,7 @@ void describe("buildTaskNotification — CC's exact XML", () => {
                 "<task-notification>",
                 "<task_id>job-1-1</task_id>",
                 "<tool_use_id>tc-42</tool_use_id>",
-                "<output_file>/tmp/pi-bg/job-1-1.log</output_file>",
+                `<output_file>${escapeXml(LOG_PATH)}</output_file>`,
                 "<status>completed</status>",
                 `<summary>Background command "npm test" completed (exit code 0)</summary>`,
                 "</task-notification>",
@@ -92,7 +96,7 @@ void describe("buildTaskNotification — CC's exact XML", () => {
     void it("omits the tool_use_id line when there is none", () => {
         const xml = buildTaskNotification({
             taskId: "job-1-1",
-            outputFile: "/tmp/x.log",
+            outputFile: join(tmpdir(), "x.log"),
             status: "failed",
             summary: "x",
         });
@@ -102,7 +106,7 @@ void describe("buildTaskNotification — CC's exact XML", () => {
     void it("omits the status line when there is none (stall warning)", () => {
         const xml = buildTaskNotification({
             taskId: "job-1-1",
-            outputFile: "/tmp/x.log",
+            outputFile: join(tmpdir(), "x.log"),
             summary: "waiting",
         });
         assert.ok(!xml.includes("<status>"));
@@ -200,7 +204,7 @@ void describe("sendTaskNotification — exactly-once + eviction", () => {
                 "<task-notification>",
                 "<task_id>job-1-5</task_id>",
                 "<tool_use_id>tc-42</tool_use_id>",
-                "<output_file>/tmp/pi-bg/job-1-1.log</output_file>",
+                `<output_file>${escapeXml(LOG_PATH)}</output_file>`,
                 "<status>completed</status>",
                 `<summary>Background command "npm test" completed (exit code 0)</summary>`,
                 "</task-notification>",

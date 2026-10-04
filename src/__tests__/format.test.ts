@@ -4,6 +4,8 @@
 
 import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
     describeJob,
     formatDuration,
@@ -21,7 +23,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
         pid: 1,
         startTime: Date.now(),
         status: "completed",
-        logPath: "/tmp/test",
+        logPath: join(tmpdir(), "test"),
         toolCallId: "tc-1",
         isBackgrounded: false,
         ...overrides,
@@ -80,7 +82,7 @@ void describe("statusLabel", () => {
 });
 
 test("statusLabel distinguishes foreground and background", () => {
-    const base = { id: "j1", command: "ls", pid: 1, startTime: Date.now(), logPath: "/tmp/x", toolCallId: "t1" };
+    const base = { id: "j1", command: "ls", pid: 1, startTime: Date.now(), logPath: join(tmpdir(), "x"), toolCallId: "t1" };
     const fg = { ...base, status: "running" as const, isBackgrounded: false };
     const bg = { ...base, status: "running" as const, isBackgrounded: true };
     assert.ok(statusLabel(fg).includes("fg"));
@@ -116,7 +118,7 @@ void describe("formatJobLine", () => {
             pid: 1,
             startTime: Date.now() - 5_000,
             status: "running",
-            logPath: "/tmp/test",
+            logPath: join(tmpdir(), "test"),
             toolCallId: "tc-1",
             isBackgrounded: true,
         };
@@ -130,7 +132,7 @@ void describe("formatJobLine", () => {
             pid: 1,
             startTime: Date.now(),
             status: "completed",
-            logPath: "/tmp/test",
+            logPath: join(tmpdir(), "test"),
             toolCallId: "tc-1",
             isBackgrounded: false,
         };
