@@ -72,13 +72,12 @@ export function registerBashBgTool(pi: ExtensionAPI, reg: BackgroundRegistry): v
                 shouldNotify: p.notify !== false,
             });
 
-            // Optional timeout — an overrun kills commands that were never
-            // eligible for auto-backgrounding (e.g. `sleep`); anything else
-            // simply keeps running, like Claude Code (no decision turn).
+            // Headless jobs honor an explicit timeout. Interactive jobs keep the
+            // existing auto-background policy without a decision turn.
             if (p.timeout) {
                 const timer = setTimeout(() => {
-                    if (isTerminalStatus(job.status) || reg.nonInteractive) return;
-                    if (!isAutoBackgroundAllowed(p.command)) {
+                    if (isTerminalStatus(job.status)) return;
+                    if (reg.nonInteractive || !isAutoBackgroundAllowed(p.command)) {
                         // Mirror the foreground timeout-kill: mark the log first
                         // so the model can tell a timeout kill apart from a
                         // normal failure, then kill WITH a notification (the

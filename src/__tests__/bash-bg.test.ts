@@ -77,4 +77,24 @@ void describe("bash_bg — timeout kill is loud", () => {
             "log marker tells a timeout kill apart from a normal failure"
         );
     });
+
+    void it("honors an explicit deadline for a headless background command", async () => {
+        const { tool, reg, ctx, messages } = harness();
+        reg.nonInteractive = true;
+        const started = await tool.execute(
+            "headless-background-timeout",
+            { command: "node -e 'setTimeout(() => console.log(\"LATE\"), 1800)'", timeout: 1 },
+            undefined,
+            undefined,
+            ctx
+        );
+        const logPath = /Output is being written to: (\S+)/.exec(started.content[0].text)?.[1];
+        assert.ok(logPath);
+        await sleep(2_100);
+        const terminal = messages.filter((m) => m.customType === EVENT.taskNotification);
+        assert.equal(terminal.length, 1);
+        assert.match(terminal[0].content, /<status>killed<\/status>/);
+        assert.match(readFileSync(logPath, "utf-8"), /Command timed out after 1s/);
+        assert.doesNotMatch(readFileSync(logPath, "utf-8"), /LATE/);
+    });
 });
