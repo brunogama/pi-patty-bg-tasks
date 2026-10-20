@@ -1,6 +1,6 @@
 # Command monitor
 
-Pi's `monitor` tool sends each complete stdout line as an event while retaining stderr for diagnosis. The verifier checks the event, the terminal failure, and both log searches.
+Pi's `monitor` tool sends complete stdout lines in notifications, which may batch several lines, while retaining stderr for diagnosis. The verifier checks the event, the terminal failure, and both log searches.
 
 ## Sub-features
 
@@ -25,6 +25,12 @@ Preconditions:
 - No WebSocket endpoint or other external service is needed.
 
 Run `node .pi/skills/verify-pi-patty-bg-tasks/scripts/verify.mjs drive monitor`. The drive emits one stdout event, writes a separate stderr diagnostic, and exits with code 7. The verifier requires a delivered Pi custom event, `Status: failed`, both lines in `jobs output`, `.log` and `.err` paths in `jobs search`, and a drive `exitCode` of `0`. The command's failure is expected. A successful drive means Pi reported and retained it correctly.
+
+---
+
+## Verify private log creation
+
+Run the [private-log probe](../SKILL.md#check-private-log-creation) and `node --experimental-strip-types --test src/__tests__/monitor.test.ts`. For a command monitor, require separate `0o600` stdout `.log` and stderr `.err` files and `EEXIST` when the stderr path exists. For a WebSocket monitor, require a `0o600` `.log` and `EEXIST` when that path exists. The WebSocket test stubs `globalThis.WebSocket` and checks frames written to the log; `drive monitor` exercises only a command monitor and does not assert log modes or exclusive creation.
 
 ---
 

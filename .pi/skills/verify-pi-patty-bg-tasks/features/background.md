@@ -26,7 +26,13 @@ Preconditions:
 - `doctor` reports that `bash_bg` and `jobs` come from this checkout's `index.ts`.
 - The verifier has a new in-memory Pi session and a unique temporary working directory.
 
-Run `node .pi/skills/verify-pi-patty-bg-tasks/scripts/verify.mjs drive background`. The drive makes the `bash_bg` call, lists jobs, attaches, reads the output, searches the log, and reads the marker file before cleanup. Require `observations.attached` to contain `Status: completed`, `observations.output` and `observations.search` to contain `BACKGROUND_DONE`, `observations.marker` to equal `BG_OK`, and `exitCode` to equal `0`.
+Run `node .pi/skills/verify-pi-patty-bg-tasks/scripts/verify.mjs drive background`. The drive makes the `bash_bg` call, lists jobs, attaches, reads the output, searches the log, and reads the marker file before cleanup. Require `observations.attached` to contain `Status: completed`, `observations.output` and `observations.search` to contain `BACKGROUND_DONE`, `observations.marker` to equal `BG_OK`, and `exitCode` to equal `0`. Compare the returned `.log` path with the search hit, then confirm that exact path is absent after `jobs cleanup`; the evidence's `cleanup` booleans cover only the session directories.
+
+---
+
+## Verify private log creation
+
+Run the [private-log probe](../SKILL.md#check-private-log-creation) and `node --experimental-strip-types --test src/__tests__/spawn.test.ts`. Require a `0o600` shell `.log` containing stdout and stderr, plus `EEXIST` when opening the same path again. `drive background` checks job behavior but does not assert file mode or exclusive creation.
 
 ---
 
