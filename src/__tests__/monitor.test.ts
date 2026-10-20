@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackgroundRegistry } from "../state.ts";
@@ -257,6 +257,7 @@ void describe("monitor — ws source mapping", () => {
         assert.ok(isWsSupported());
         const logPath = join(dir, "ws.log");
         const src = openWsSource({ url: "wss://example/feed" }, logPath);
+        assert.equal(statSync(logPath).mode & 0o777, 0o600);
         const ws = FakeWS.instances[FakeWS.instances.length - 1];
 
         ws.dispatch("message", { data: "hello" });

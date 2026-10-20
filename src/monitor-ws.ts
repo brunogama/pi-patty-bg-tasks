@@ -33,7 +33,7 @@ export function isWsSupported(): boolean {
 
 /**
  * Open `spec.url`, appending each event as a line to `logPath`. The log file is
- * created (truncated) up front so the follower has something to stat. Returns
+ * created exclusively up front so the follower has something to stat. Returns
  * an exit promise (resolved on close) and a close handle.
  *
  * Throws synchronously if WebSocket is unsupported or construction fails — the
@@ -53,7 +53,7 @@ export function openWsSource(spec: WsSpec, logPath: string): WsSource {
     // hold one appendable fd open for the socket's lifetime — one writeSync per
     // frame instead of an open/write/close trio.
     mkdirSync(dirname(logPath), { recursive: true });
-    const logFd = openSync(logPath, "w");
+    const logFd = openSync(logPath, "wx", 0o600);
     let fdClosed = false;
     const closeFd = (): void => {
         if (fdClosed) return;
