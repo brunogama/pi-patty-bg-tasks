@@ -1,7 +1,7 @@
 // src/__tests__/spawn.test.ts
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync, unlinkSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, unlinkSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,6 +28,19 @@ describe("spawnWithFileOutput", () => {
         unlinkSync(logPath);
     });
 
+
+    test("restricts background logs to their owner", async () => {
+        const { spawnWithFileOutput } = await import("../spawn.ts");
+        mkdirSync(testDir, { recursive: true });
+        const logPath = join(testDir, "test-private.log");
+        try {
+            const result = spawnWithFileOutput({ command: "echo private", cwd: process.cwd(), logPath });
+            await result.exit;
+            assert.equal(statSync(logPath).mode & 0o777, 0o600);
+        } finally {
+            if (existsSync(logPath)) unlinkSync(logPath);
+        }
+    });
     test("runs zsh builtins on macOS", { skip: process.platform !== "darwin" }, async () => {
         const { spawnWithFileOutput } = await import("../spawn.ts");
         mkdirSync(testDir, { recursive: true });

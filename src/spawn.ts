@@ -42,10 +42,10 @@ export function spawnWithFileOutput(args: {
     keepAlive?: boolean;
 }): SpawnResult {
     ensureLogDir(args.logPath);
-    const outFd = openSync(args.logPath, "w");
+    const outFd = openSync(args.logPath, "wx", 0o600);
     let errFd: number;
     try {
-        errFd = args.errPath ? openSync(args.errPath, "w") : outFd;
+        errFd = args.errPath ? openSync(args.errPath, "wx", 0o600) : outFd;
     } catch (err) {
         closeSync(outFd);
         throw err;
